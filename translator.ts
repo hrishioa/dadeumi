@@ -750,7 +750,7 @@ Please put your review in <review> tags and your final translation in <final_tra
         );
 
         const response = await anthropic.beta.messages.create({
-          model: "claude-3-7-sonnet-20240715",
+          model: "claude-3-7-sonnet-20250219",
           max_tokens: 16000,
           temperature: 1,
           messages: [
