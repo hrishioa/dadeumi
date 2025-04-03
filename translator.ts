@@ -1395,6 +1395,10 @@ Please be candid but fair in your assessment.`,
       let inputTokens = 0;
       let outputTokens = 0;
 
+      let startTime = 0;
+      let endTime = 0;
+      let duration = 0;
+
       // --- Call appropriate OpenAI API based on model type ---
       if (isReasoningModel) {
         // --- Use Responses API for o1/o3 models ---
@@ -1415,13 +1419,15 @@ Please be candid but fair in your assessment.`,
             .join("\n\n");
         }
 
+        startTime = performance.now();
         const response = await openai.responses.create({
           model: modelName,
           input: [{ role: "user", content: combinedPrompt }],
           reasoning: { effort: this.config.reasoningEffort },
           max_output_tokens: this.config.maxOutputTokens,
         });
-
+        endTime = performance.now();
+        duration = (endTime - startTime) / 1000; // Duration in seconds
         responseContent = response.output_text || "";
         inputTokens = response.usage?.input_tokens || 0;
         outputTokens = response.usage?.output_tokens || 0; // Includes reasoning tokens
@@ -1449,18 +1455,15 @@ Please be candid but fair in your assessment.`,
         this.log(
           chalk.dim(`  💬 Using Chat Completions API for model: ${modelName}`)
         );
-        console.log(
-          chalk.magenta(
-            `[DEBUG] Value of this.config.maxOutputTokens inside callOpenAI: ${this.config.maxOutputTokens}`
-          )
-        ); // DEBUG LOG
+        startTime = performance.now();
         const completion = await openai.chat.completions.create({
           model: modelName,
           messages: messages,
           temperature: 0.7,
           max_tokens: this.config.maxOutputTokens, // Use the new config option here too
         });
-
+        endTime = performance.now();
+        duration = (endTime - startTime) / 1000; // Duration in seconds
         responseContent = completion.choices[0].message.content || "";
         inputTokens = completion.usage?.prompt_tokens || 0;
         outputTokens = completion.usage?.completion_tokens || 0;
@@ -1471,6 +1474,20 @@ Please be candid but fair in your assessment.`,
       this.totalInputTokens += inputTokens;
       this.totalOutputTokens += outputTokens;
       this.updateCost(modelName, inputTokens, outputTokens);
+
+      // Log TPS if verbose
+      if (this.config.verbose) {
+        const tps =
+          duration > 0 ? (outputTokens / duration).toFixed(2) : "Infinity";
+        this.log(chalk.cyan(`  ⚡ Tokens per second (output): ${tps}`));
+        this.log(
+          chalk.dim(
+            `     (Duration: ${duration.toFixed(
+              2
+            )}s, Output Tokens: ${outputTokens})`
+          )
+        );
+      }
 
       // Add the response to the conversation (only for main conversation)
       if (!isExternalReview) {
@@ -1651,9 +1668,7 @@ Please be candid but fair in your assessment.`,
       this.outputFiles["Conversation History (Text)"] =
         this.conversationTextPath;
 
-      if (this.config.verbose) {
-        this.log(chalk.dim(`  ↪ Conversation history updated (${label})`));
-      }
+      // Removed verbose log for history update
     } catch (error) {
       console.error(
         chalk.yellow("⚠️ Warning: Failed to save conversation history:"),
@@ -2117,12 +2132,6 @@ program
       }
     }
     // --- End Model-Specific Adjustments ---
-
-    console.log(
-      chalk.magenta(
-        `[DEBUG] Value for maxOutputTokens before creating config: ${maxOutputTokens}`
-      )
-    ); // DEBUG LOG
 
     try {
       // Validate input file exists
