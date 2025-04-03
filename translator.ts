@@ -49,6 +49,7 @@ interface TranslationConfig {
   maxRetries: number;
   retryDelay: number;
   skipExternalReview: boolean;
+  customInstructions?: string;
 }
 
 interface TranslationMetrics {
@@ -85,6 +86,7 @@ class TranslationWorkflow {
 
   constructor(config: TranslationConfig) {
     this.config = config;
+    let resumed = false; // Flag to indicate if we resumed from a previous state
 
     // Create output directory if it doesn't exist
     if (!fs.existsSync(this.config.outputDir)) {
@@ -101,43 +103,159 @@ class TranslationWorkflow {
       "conversation_history.txt"
     );
 
-    // Calculate source metrics using the updated calculateMetrics function
-    // Passing true here is correct, as we are calculating for the source text
-    this.sourceMetrics = this.calculateMetrics(this.config.sourceText, true);
+    // Check for existing conversation history to resume
+    if (fs.existsSync(this.conversationJsonPath)) {
+      try {
+        const historyContent = fs.readFileSync(
+          this.conversationJsonPath,
+          "utf-8"
+        );
+        const historyData = JSON.parse(historyContent);
 
-    // Initialize conversation with system prompt
+        if (historyData.conversation && historyData.metadata) {
+          this.conversation = historyData.conversation;
+          this.totalTokens = historyData.metadata.totalTokens || 0;
+          this.stepCounter = historyData.metadata.step || 0;
+          const lastLabel = historyData.metadata.label || "Unknown Step";
+
+          // Scan output directory for existing step files and populate outputFiles
+          const files = fs.readdirSync(this.config.outputDir);
+          files.forEach((file) => {
+            if (/^\\d{2}_.*\\.txt$/.test(file)) {
+              // Match NN_*.txt files
+              // Try to determine the step name from the filename (e.g., 01_initial_analysis -> Initial Analysis)
+              const stepKey = file
+                .substring(3, file.length - 4)
+                .replace(/_/g, " ")
+                .replace(/\\b\\w/g, (l) => l.toUpperCase());
+              this.outputFiles[stepKey] = path.join(
+                this.config.outputDir,
+                file
+              );
+            }
+          });
+
+          // Reconstruct translationSteps based on found files (or stepCounter)
+          // Simple reconstruction based on stepCounter for now
+          const stepNames = [
+            "Initial Analysis",
+            "Expression Exploration",
+            "Cultural Adaptation Discussion",
+            "Title & Inspiration Exploration",
+            "First Translation",
+            "Self-Critique & First Refinement",
+            "Improved Translation", // Note: This step generates 07, but critique generates 06
+            "Second Refinement", // Note: This step generates 09, but critique generates 08
+            "Further Improved Translation",
+            "Final Translation", // Note: This step generates 11, but review generates 10
+            "Comprehensive Review",
+            "External Review", // Generates 12
+            "Final Refinement", // Generates 13
+          ];
+          // This mapping needs refinement based on actual step logic and counter increments
+          // For now, approximate based on stepCounter
+          this.translationSteps = stepNames.slice(0, this.stepCounter); // Approximate reconstruction
+
+          // Load existing metrics
+          const metricsPath = path.join(
+            this.config.outputDir,
+            "translation_metrics.json"
+          );
+          if (fs.existsSync(metricsPath)) {
+            const metricsContent = fs.readFileSync(metricsPath, "utf-8");
+            const metricsData = JSON.parse(metricsContent);
+            this.sourceMetrics =
+              metricsData.source ||
+              this.calculateMetrics(this.config.sourceText, true);
+            Object.entries(metricsData).forEach(([key, value]) => {
+              if (key !== "source") {
+                this.translationMetrics.set(key, value as TranslationMetrics);
+              }
+            });
+          } else {
+            // Calculate source metrics if metrics file doesn't exist
+            this.sourceMetrics = this.calculateMetrics(
+              this.config.sourceText,
+              true
+            );
+          }
+
+          console.log(
+            chalk.yellow(
+              `🔄 Resuming translation workflow from step ${this.stepCounter} (${lastLabel})`
+            )
+          );
+          resumed = true;
+        } else {
+          // Invalid history file, initialize normally
+          this.initializeNewConversation();
+        }
+      } catch (error) {
+        console.error(
+          chalk.red(
+            "❌ Error reading or parsing conversation history file. Starting fresh."
+          ),
+          error
+        );
+        this.initializeNewConversation();
+      }
+    } else {
+      // No history file, initialize normally
+      this.initializeNewConversation();
+    }
+
+    // If we didn't resume, save the initial state
+    if (!resumed) {
+      this.saveConversationHistory("Initial system prompt");
+    }
+  }
+
+  // Helper function to initialize a new conversation state
+  private initializeNewConversation(): void {
+    this.sourceMetrics = this.calculateMetrics(this.config.sourceText, true);
+    this.conversation = []; // Reset conversation
+    this.totalTokens = 0;
+    this.stepCounter = 0;
+    this.translationSteps = [];
+    this.translationMetrics = new Map();
+    this.outputFiles = {};
+
+    // Build system prompt
+    let systemPrompt = `You are an expert literary translator with deep fluency in ${this.config.sourceLanguage} and ${this.config.targetLanguage}.
+    Your goal is to create a high-quality translation that preserves the original's tone, style, literary devices,
+    cultural nuances, and overall impact. You prioritize readability and naturalness in the target language while
+    staying faithful to the source text's meaning and intention.
+
+    Always place your translations inside appropriate XML tags for easy extraction:
+    - Initial analysis: <analysis>your analysis here</analysis>
+    - Expression exploration: <expression_exploration>your exploration here</expression_exploration>
+    - Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
+    - Title options: <title_options>your title suggestions here</title_options>
+    - First draft translation: <first_translation>your translation here</first_translation>
+    - Critique: <critique>your critique here</critique>
+    - Improved translation: <improved_translation>your improved translation here</improved_translation>
+    - Second critique: <second_critique>your second critique here</second_critique>
+    - Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
+    - Comprehensive review: <review>your comprehensive review here</review>
+    - Final translation: <final_translation>your final translation here</final_translation>
+
+    Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
+    Think deeply about cultural context, idiomatic expressions, and literary devices that would resonate with native
+    ${this.config.targetLanguage} speakers.
+
+    Work through the translation step by step, maintaining the voice and essence of the original while making it
+    feel naturally written in ${this.config.targetLanguage}.
+
+    Your output length is unlocked so you can do at least 10K tokens in the output.`;
+
+    if (this.config.customInstructions) {
+      systemPrompt += `\n\nAdditional instructions for this translation:\n${this.config.customInstructions}`;
+    }
+
     this.conversation.push({
       role: "system",
-      content: `You are an expert literary translator with deep fluency in ${config.sourceLanguage} and ${config.targetLanguage}.
-Your goal is to create a high-quality translation that preserves the original's tone, style, literary devices,
-cultural nuances, and overall impact. You prioritize readability and naturalness in the target language while
-staying faithful to the source text's meaning and intention.
-
-Always place your translations inside appropriate XML tags for easy extraction:
-- Initial analysis: <analysis>your analysis here</analysis>
-- Expression exploration: <expression_exploration>your exploration here</expression_exploration>
-- Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
-- Title options: <title_options>your title suggestions here</title_options>
-- First draft translation: <first_translation>your translation here</first_translation>
-- Critique: <critique>your critique here</critique>
-- Improved translation: <improved_translation>your improved translation here</improved_translation>
-- Second critique: <second_critique>your second critique here</second_critique>
-- Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
-- Comprehensive review: <review>your comprehensive review here</review>
-- Final translation: <final_translation>your final translation here</final_translation>
-
-Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
-Think deeply about cultural context, idiomatic expressions, and literary devices that would resonate with native
-${config.targetLanguage} speakers.
-
-Work through the translation step by step, maintaining the voice and essence of the original while making it
-feel naturally written in ${config.targetLanguage}.
-
-Your output length is unlocked so you can do at least 10K tokens in the output.`,
+      content: systemPrompt,
     });
-
-    // Save initial conversation with system prompt
-    this.saveConversationHistory("Initial system prompt");
   }
 
   // Main execution method
@@ -169,7 +287,7 @@ Your output length is unlocked so you can do at least 10K tokens in the output.`
       // Step 5: First translation attempt
       const firstTranslation = await this.firstTranslationAttempt();
 
-      // Step 6: Self-critique and improvement (first iteration)
+      // Step 6: Self-critique and first refinement
       const improvedTranslation = await this.selfCritiqueAndRefinement(
         firstTranslation
       );
@@ -233,8 +351,25 @@ Your output length is unlocked so you can do at least 10K tokens in the output.`
 
   // Step 1: Initial analysis
   private async initialAnalysis(): Promise<void> {
-    this.stepCounter++;
-    this.translationSteps.push("Initial Analysis");
+    const outputPath = path.join(
+      this.config.outputDir,
+      "01_initial_analysis.txt"
+    );
+    const stepKey = "Initial Analysis";
+
+    if (fs.existsSync(outputPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 1 (${stepKey}): Output file already exists.`
+        )
+      );
+      // Ensure outputFiles map is populated if resuming
+      if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
+      return;
+    }
+
+    this.stepCounter++; // Increment counter only if step runs
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(`📊 Step ${this.stepCounter}: Analyzing source text`)
     );
@@ -256,31 +391,38 @@ Remember to put your analysis in <analysis> tags.`;
       chalk.green(`📊 Step ${this.stepCounter}: Initial analysis completed`)
     );
 
-    // Extract analysis for later use
     const analysisMatch = response.match(/<analysis>([\s\S]*)<\/analysis>/);
     const analysis = analysisMatch ? analysisMatch[1].trim() : response;
 
-    // Save the analysis
-    const analysisPath = path.join(
-      this.config.outputDir,
-      "01_initial_analysis.txt"
-    );
-    fs.writeFileSync(analysisPath, analysis);
-    this.outputFiles["Initial Analysis"] = analysisPath;
-
+    fs.writeFileSync(outputPath, analysis);
+    this.outputFiles[stepKey] = outputPath;
     this.log(chalk.green("  ↪ Analysis saved to disk"));
 
-    // Calculate and display metrics
-    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(analysis);
     this.translationMetrics.set("analysis", metrics);
-    this.displayMetrics("Analysis", metrics);
+    this.displayMetrics(stepKey, metrics);
   }
 
   // Step 2: Exploring expression in target language
   private async expressionExploration(): Promise<void> {
+    const outputPath = path.join(
+      this.config.outputDir,
+      "02_expression_exploration.txt"
+    );
+    const stepKey = "Expression Exploration";
+
+    if (fs.existsSync(outputPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 2 (${stepKey}): Output file already exists.`
+        )
+      );
+      if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
+      return;
+    }
+
     this.stepCounter++;
-    this.translationSteps.push("Expression Exploration");
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
         `🔍 Step ${this.stepCounter}: Exploring expression in target language`
@@ -305,7 +447,6 @@ in <expression_exploration> tags.`;
       )
     );
 
-    // Extract exploration content
     const explorationMatch = response.match(
       /<expression_exploration>([\s\S]*)<\/expression_exploration>/
     );
@@ -313,27 +454,35 @@ in <expression_exploration> tags.`;
       ? explorationMatch[1].trim()
       : response;
 
-    // Save the exploration
-    const explorationPath = path.join(
-      this.config.outputDir,
-      "02_expression_exploration.txt"
-    );
-    fs.writeFileSync(explorationPath, exploration);
-    this.outputFiles["Expression Exploration"] = explorationPath;
-
+    fs.writeFileSync(outputPath, exploration);
+    this.outputFiles[stepKey] = outputPath;
     this.log(chalk.green("  ↪ Expression exploration saved to disk"));
 
-    // Calculate and display metrics
-    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(exploration);
     this.translationMetrics.set("exploration", metrics);
-    this.displayMetrics("Expression Exploration", metrics);
+    this.displayMetrics(stepKey, metrics);
   }
 
   // Step 3: Discussion on tone, honorifics, and cultural adaptation
   private async toneAndCulturalDiscussion(): Promise<void> {
+    const outputPath = path.join(
+      this.config.outputDir,
+      "03_cultural_discussion.txt"
+    );
+    const stepKey = "Cultural Adaptation Discussion"; // Matches history reconstruction guess
+
+    if (fs.existsSync(outputPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 3 (${stepKey}): Output file already exists.`
+        )
+      );
+      if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
+      return;
+    }
+
     this.stepCounter++;
-    this.translationSteps.push("Cultural Adaptation Discussion");
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
         `🏮 Step ${this.stepCounter}: Discussing cultural adaptation and tone`
@@ -360,33 +509,37 @@ Please share your thoughts in <cultural_discussion> tags.`;
       )
     );
 
-    // Extract discussion content
     const discussionMatch = response.match(
       /<cultural_discussion>([\s\S]*)<\/cultural_discussion>/
     );
     const discussion = discussionMatch ? discussionMatch[1].trim() : response;
 
-    // Save the discussion
-    const discussionPath = path.join(
-      this.config.outputDir,
-      "03_cultural_discussion.txt"
-    );
-    fs.writeFileSync(discussionPath, discussion);
-    this.outputFiles["Cultural Discussion"] = discussionPath;
-
+    fs.writeFileSync(outputPath, discussion);
+    this.outputFiles[stepKey] = outputPath;
     this.log(chalk.green("  ↪ Cultural adaptation discussion saved to disk"));
 
-    // Calculate and display metrics
-    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(discussion);
     this.translationMetrics.set("cultural_discussion", metrics);
-    this.displayMetrics("Cultural Discussion", metrics);
+    this.displayMetrics(stepKey, metrics);
   }
 
   // Step 4: Title translation and literary inspiration
   private async titleAndInspirationExploration(): Promise<void> {
+    const outputPath = path.join(this.config.outputDir, "04_title_options.txt");
+    const stepKey = "Title & Inspiration Exploration"; // Matches history reconstruction guess
+
+    if (fs.existsSync(outputPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 4 (${stepKey}): Output file already exists.`
+        )
+      );
+      if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
+      return;
+    }
+
     this.stepCounter++;
-    this.translationSteps.push("Title & Inspiration Exploration");
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
         `✨ Step ${this.stepCounter}: Exploring title translation and literary inspiration`
@@ -413,33 +566,41 @@ Please share your thoughts in <title_options> tags.`;
       )
     );
 
-    // Extract title options content
     const optionsMatch = response.match(
       /<title_options>([\s\S]*)<\/title_options>/
     );
     const options = optionsMatch ? optionsMatch[1].trim() : response;
 
-    // Save the title options
-    const optionsPath = path.join(
-      this.config.outputDir,
-      "04_title_options.txt"
-    );
-    fs.writeFileSync(optionsPath, options);
-    this.outputFiles["Title Options"] = optionsPath;
-
+    fs.writeFileSync(outputPath, options);
+    this.outputFiles[stepKey] = outputPath;
     this.log(chalk.green("  ↪ Title options and inspiration saved to disk"));
 
-    // Calculate and display metrics
-    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(options);
     this.translationMetrics.set("title_options", metrics);
-    this.displayMetrics("Title Options", metrics);
+    this.displayMetrics(stepKey, metrics);
   }
 
   // Step 5: First translation attempt
   private async firstTranslationAttempt(): Promise<string> {
+    const outputPath = path.join(
+      this.config.outputDir,
+      "05_first_translation.txt"
+    );
+    const stepKey = "First Translation";
+
+    if (fs.existsSync(outputPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 5 (${stepKey}): Output file already exists.`
+        )
+      );
+      if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
+      // Read and return content from existing file
+      return fs.readFileSync(outputPath, "utf-8");
+    }
+
     this.stepCounter++;
-    this.translationSteps.push("First Translation");
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
         `📝 Step ${this.stepCounter}: Creating first draft translation`
@@ -464,7 +625,6 @@ Remember to put your translation in <first_translation> tags.`;
       )
     );
 
-    // Extract first translation
     const translationMatch = response.match(
       /<first_translation>([\s\S]*)<\/first_translation>/
     );
@@ -472,21 +632,13 @@ Remember to put your translation in <first_translation> tags.`;
       ? translationMatch[1].trim()
       : response;
 
-    // Save the first translation
-    const translationPath = path.join(
-      this.config.outputDir,
-      "05_first_translation.txt"
-    );
-    fs.writeFileSync(translationPath, firstTranslation);
-    this.outputFiles["First Translation"] = translationPath;
-
+    fs.writeFileSync(outputPath, firstTranslation);
+    this.outputFiles[stepKey] = outputPath;
     this.log(chalk.green("  ↪ First draft translation saved to disk"));
 
-    // Calculate and display metrics
-    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(firstTranslation);
     this.translationMetrics.set("first_translation", metrics);
-    this.displayMetrics("First Translation", metrics);
+    this.displayMetrics(stepKey, metrics);
 
     return firstTranslation;
   }
@@ -495,8 +647,36 @@ Remember to put your translation in <first_translation> tags.`;
   private async selfCritiqueAndRefinement(
     previousTranslation: string
   ): Promise<string> {
-    this.stepCounter++;
-    this.translationSteps.push("Self-Critique & First Refinement");
+    const critiquePath = path.join(
+      this.config.outputDir,
+      "06_first_critique.txt"
+    );
+    const improvedPath = path.join(
+      this.config.outputDir,
+      "07_improved_translation.txt"
+    );
+    const stepKeyCritique = "First Critique";
+    const stepKeyImproved = "Improved Translation"; // Matches history reconstruction guess
+
+    // Check if the *result* of this step (improved translation) already exists
+    if (fs.existsSync(improvedPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 6 (Self-Critique & First Refinement): Output file ${path.basename(
+            improvedPath
+          )} already exists.`
+        )
+      );
+      // Ensure both files are mapped if resuming
+      if (!this.outputFiles[stepKeyCritique] && fs.existsSync(critiquePath))
+        this.outputFiles[stepKeyCritique] = critiquePath;
+      if (!this.outputFiles[stepKeyImproved])
+        this.outputFiles[stepKeyImproved] = improvedPath;
+      return fs.readFileSync(improvedPath, "utf-8");
+    }
+
+    this.stepCounter++; // Increment counter only if step runs
+    this.translationSteps.push("Self-Critique & First Refinement"); // Combined step name
     this.spinner.start(
       chalk.blue(
         `🔄 Step ${this.stepCounter}: Performing self-critique and first refinement`
@@ -530,11 +710,9 @@ Please put your critique in <critique> tags and your complete improved translati
       )
     );
 
-    // Extract critique
     const critiqueMatch = response.match(/<critique>([\s\S]*)<\/critique>/);
     const critique = critiqueMatch ? critiqueMatch[1].trim() : "";
 
-    // Extract improved translation
     const improvedMatch = response.match(
       /<improved_translation>([\s\S]*)<\/improved_translation>/
     );
@@ -542,37 +720,23 @@ Please put your critique in <critique> tags and your complete improved translati
       ? improvedMatch[1].trim()
       : response;
 
-    // Save the critique
-    const critiquePath = path.join(
-      this.config.outputDir,
-      "06_first_critique.txt"
-    );
     fs.writeFileSync(critiquePath, critique);
-    this.outputFiles["First Critique"] = critiquePath;
+    this.outputFiles[stepKeyCritique] = critiquePath;
 
-    // Save the improved translation
-    const improvedPath = path.join(
-      this.config.outputDir,
-      "07_improved_translation.txt"
-    );
     fs.writeFileSync(improvedPath, improvedTranslation);
-    this.outputFiles["Improved Translation"] = improvedPath;
+    this.outputFiles[stepKeyImproved] = improvedPath;
 
     this.log(
       chalk.green("  ↪ Critique and improved translation saved to disk")
     );
 
-    // Calculate and display metrics for critique
-    // Passing false (or omitting) here is correct for generated text
     const critiqueMetrics = this.calculateMetrics(critique);
     this.translationMetrics.set("first_critique", critiqueMetrics);
-    this.displayMetrics("First Critique", critiqueMetrics);
+    this.displayMetrics(stepKeyCritique, critiqueMetrics);
 
-    // Calculate and display metrics for improved translation
-    // Passing false (or omitting) here is correct for generated text
     const improvedMetrics = this.calculateMetrics(improvedTranslation);
     this.translationMetrics.set("improved_translation", improvedMetrics);
-    this.displayMetrics("Improved Translation", improvedMetrics);
+    this.displayMetrics(stepKeyImproved, improvedMetrics);
 
     return improvedTranslation;
   }
@@ -581,8 +745,36 @@ Please put your critique in <critique> tags and your complete improved translati
   private async furtherRefinement(
     previousTranslation: string
   ): Promise<string> {
-    this.stepCounter++;
-    this.translationSteps.push("Second Refinement");
+    const critiquePath = path.join(
+      this.config.outputDir,
+      "08_second_critique.txt"
+    );
+    const furtherImprovedPath = path.join(
+      this.config.outputDir,
+      "09_further_improved_translation.txt"
+    );
+    const stepKeyCritique = "Second Critique";
+    const stepKeyImproved = "Further Improved Translation"; // Matches history reconstruction guess
+
+    // Check if the *result* of this step (further improved translation) already exists
+    if (fs.existsSync(furtherImprovedPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 7 (Second Refinement): Output file ${path.basename(
+            furtherImprovedPath
+          )} already exists.`
+        )
+      );
+      // Ensure both files are mapped if resuming
+      if (!this.outputFiles[stepKeyCritique] && fs.existsSync(critiquePath))
+        this.outputFiles[stepKeyCritique] = critiquePath;
+      if (!this.outputFiles[stepKeyImproved])
+        this.outputFiles[stepKeyImproved] = furtherImprovedPath;
+      return fs.readFileSync(furtherImprovedPath, "utf-8");
+    }
+
+    this.stepCounter++; // Increment counter only if step runs
+    this.translationSteps.push("Second Refinement"); // Combined step name
     this.spinner.start(
       chalk.blue(
         `🔄 Step ${this.stepCounter}: Performing second round of refinement`
@@ -615,13 +807,11 @@ in <further_improved_translation> tags.`;
       )
     );
 
-    // Extract second critique
     const critiqueMatch = response.match(
       /<second_critique>([\s\S]*)<\/second_critique>/
     );
     const critique = critiqueMatch ? critiqueMatch[1].trim() : "";
 
-    // Extract further improved translation
     const furtherImprovedMatch = response.match(
       /<further_improved_translation>([\s\S]*)<\/further_improved_translation>/
     );
@@ -629,21 +819,11 @@ in <further_improved_translation> tags.`;
       ? furtherImprovedMatch[1].trim()
       : response;
 
-    // Save the second critique
-    const critiquePath = path.join(
-      this.config.outputDir,
-      "08_second_critique.txt"
-    );
     fs.writeFileSync(critiquePath, critique);
-    this.outputFiles["Second Critique"] = critiquePath;
+    this.outputFiles[stepKeyCritique] = critiquePath;
 
-    // Save the further improved translation
-    const furtherImprovedPath = path.join(
-      this.config.outputDir,
-      "09_further_improved_translation.txt"
-    );
     fs.writeFileSync(furtherImprovedPath, furtherImprovedTranslation);
-    this.outputFiles["Further Improved Translation"] = furtherImprovedPath;
+    this.outputFiles[stepKeyImproved] = furtherImprovedPath;
 
     this.log(
       chalk.green(
@@ -651,14 +831,10 @@ in <further_improved_translation> tags.`;
       )
     );
 
-    // Calculate and display metrics for second critique
-    // Passing false (or omitting) here is correct for generated text
     const critiqueMetrics = this.calculateMetrics(critique);
     this.translationMetrics.set("second_critique", critiqueMetrics);
-    this.displayMetrics("Second Critique", critiqueMetrics);
+    this.displayMetrics(stepKeyCritique, critiqueMetrics);
 
-    // Calculate and display metrics for further improved translation
-    // Passing false (or omitting) here is correct for generated text
     const furtherImprovedMetrics = this.calculateMetrics(
       furtherImprovedTranslation
     );
@@ -666,15 +842,44 @@ in <further_improved_translation> tags.`;
       "further_improved_translation",
       furtherImprovedMetrics
     );
-    this.displayMetrics("Further Improved Translation", furtherImprovedMetrics);
+    this.displayMetrics(stepKeyImproved, furtherImprovedMetrics);
 
     return furtherImprovedTranslation;
   }
 
   // Step 8: Final translation with comprehensive review
   private async finalTranslation(previousTranslation: string): Promise<string> {
-    this.stepCounter++;
-    this.translationSteps.push("Final Translation");
+    const reviewPath = path.join(
+      this.config.outputDir,
+      "10_comprehensive_review.txt"
+    );
+    const finalTranslationPath = path.join(
+      this.config.outputDir,
+      "11_final_translation.txt"
+    );
+    const stepKeyReview = "Comprehensive Review"; // Matches history reconstruction guess
+    const stepKeyFinal = "Final Translation (Pre-External Review)";
+
+    // Check if the *result* of this step (final translation) already exists
+    if (fs.existsSync(finalTranslationPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 8 (Final Translation): Output file ${path.basename(
+            finalTranslationPath
+          )} already exists.`
+        )
+      );
+      // Ensure both files are mapped if resuming
+      if (!this.outputFiles[stepKeyReview] && fs.existsSync(reviewPath))
+        this.outputFiles[stepKeyReview] = reviewPath;
+      if (!this.outputFiles[stepKeyFinal])
+        this.outputFiles[stepKeyFinal] = finalTranslationPath;
+      return fs.readFileSync(finalTranslationPath, "utf-8");
+    }
+
+    this.stepCounter++; // Increment counter only if step runs
+    // Need to decide if translationSteps should include "Comprehensive Review" and "Final Translation" separately
+    this.translationSteps.push("Final Translation"); // Using the primary outcome step name
     this.spinner.start(
       chalk.blue(
         `🏁 Step ${this.stepCounter}: Creating final translation with comprehensive review`
@@ -706,11 +911,9 @@ Please put your review in <review> tags and your complete final translation in <
       chalk.green(`🏁 Step ${this.stepCounter}: Final translation completed`)
     );
 
-    // Extract comprehensive review
     const reviewMatch = response.match(/<review>([\s\S]*)<\/review>/);
     const review = reviewMatch ? reviewMatch[1].trim() : "";
 
-    // Extract final translation
     const finalTranslationMatch = response.match(
       /<final_translation>([\s\S]*)<\/final_translation>/
     );
@@ -718,21 +921,11 @@ Please put your review in <review> tags and your complete final translation in <
       ? finalTranslationMatch[1].trim()
       : response;
 
-    // Save the comprehensive review
-    const reviewPath = path.join(
-      this.config.outputDir,
-      "10_comprehensive_review.txt"
-    );
     fs.writeFileSync(reviewPath, review);
-    this.outputFiles["Comprehensive Review"] = reviewPath;
+    this.outputFiles[stepKeyReview] = reviewPath;
 
-    const finalTranslationPath = path.join(
-      this.config.outputDir,
-      "11_final_translation.txt"
-    );
     fs.writeFileSync(finalTranslationPath, finalTranslation);
-    this.outputFiles["Final Translation (Pre-External Review)"] =
-      finalTranslationPath;
+    this.outputFiles[stepKeyFinal] = finalTranslationPath;
 
     this.log(
       chalk.green(
@@ -740,17 +933,13 @@ Please put your review in <review> tags and your complete final translation in <
       )
     );
 
-    // Calculate and display metrics for review
-    // Passing false (or omitting) here is correct for generated text
     const reviewMetrics = this.calculateMetrics(review);
     this.translationMetrics.set("review", reviewMetrics);
-    this.displayMetrics("Comprehensive Review", reviewMetrics);
+    this.displayMetrics(stepKeyReview, reviewMetrics);
 
-    // Calculate and display metrics for final translation
-    // Passing false (or omitting) here is correct for generated text
     const finalMetrics = this.calculateMetrics(finalTranslation);
     this.translationMetrics.set("final_translation", finalMetrics);
-    this.displayMetrics("Final Translation", finalMetrics);
+    this.displayMetrics("Final Translation", finalMetrics); // Use simpler label for display
     this.displayComparisonWithSource(finalMetrics);
 
     return finalTranslation;
@@ -758,32 +947,50 @@ Please put your review in <review> tags and your complete final translation in <
 
   // Step 9: External review using Anthropic Claude or OpenAI
   private async getExternalReview(finalTranslation: string): Promise<void> {
-    this.stepCounter++;
-    this.translationSteps.push("External Review");
-    this.spinner.start(
-      chalk.blue(`🔍 Step ${this.stepCounter}: Getting external review`)
+    const externalReviewPath = path.join(
+      this.config.outputDir,
+      "12_external_review.txt"
     );
+    const stepKey = "External Review";
+    let externalReview = "";
+    let reviewObtained = false;
 
-    try {
-      let externalReview = "";
+    // Check if external review file already exists
+    if (fs.existsSync(externalReviewPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 9 (${stepKey}): Output file already exists.`
+        )
+      );
+      if (!this.outputFiles[stepKey])
+        this.outputFiles[stepKey] = externalReviewPath;
+      externalReview = fs.readFileSync(externalReviewPath, "utf-8");
+      reviewObtained = true;
+      // Proceed to apply feedback even if review was loaded from file
+    } else {
+      // Only execute the API call part if the file doesn't exist
+      this.stepCounter++;
+      this.translationSteps.push(stepKey);
+      this.spinner.start(
+        chalk.blue(`🔍 Step ${this.stepCounter}: Getting external review`)
+      );
 
-      if (anthropic) {
-        // Use Anthropic Claude 3.7 Sonnet for external review
-        this.spinner.text = chalk.blue(
-          `🔍 Step ${this.stepCounter}: Getting external review from Claude 3.7 Sonnet`
-        );
-
-        const response = await anthropic.beta.messages.create({
-          model: "claude-3-7-sonnet-20250219",
-          max_tokens: 16000,
-          temperature: 1,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `<Original>
+      try {
+        if (anthropic) {
+          this.spinner.text = chalk.blue(
+            `🔍 Step ${this.stepCounter}: Getting external review from Claude 3.7 Sonnet`
+          );
+          const response = await anthropic.beta.messages.create({
+            model: "claude-3-7-sonnet-20250219",
+            max_tokens: 16000,
+            temperature: 1,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `<Original>
 ${this.config.sourceText}
 </Original>
 
@@ -794,38 +1001,26 @@ ${finalTranslation}
 Here is an original ${this.config.sourceLanguage} article and a ${this.config.targetLanguage} translation. Compare and critique the translation in terms of how well it captures the soul of the original and the dialectic, but also how it stands alone as a piece of writing. Provide actionable feedback, with possible inspiration from good ${this.config.targetLanguage} writers or pieces.
 
 Please format your response in <external_review> tags.`,
-                },
-              ],
-            },
-          ],
-        });
-
-        // Check the type of the first content block before accessing text
-        if (response.content[0]?.type === "text") {
-          externalReview = response.content[0].text;
+                  },
+                ],
+              },
+            ],
+          });
+          if (response.content[0]?.type === "text") {
+            externalReview = response.content[0].text;
+          } else {
+            console.warn(
+              chalk.yellow(
+                "⚠️ Anthropic response did not contain text in the expected format."
+              )
+            );
+            externalReview = ""; // Default to empty if unexpected format
+          }
         } else {
-          console.warn(
-            chalk.yellow(
-              "⚠️ Anthropic response did not contain text in the expected format."
-            )
+          this.spinner.text = chalk.blue(
+            `🔍 Step ${this.stepCounter}: Getting external review from OpenAI (Claude not available)`
           );
-          externalReview = ""; // Default to empty if unexpected format
-        }
-
-        // Extract from tags if present
-        const reviewMatch = externalReview.match(
-          /<external_review>([\s\S]*)<\/external_review>/
-        );
-        if (reviewMatch) {
-          externalReview = reviewMatch[1].trim();
-        }
-      } else {
-        // Use OpenAI as fallback for external review
-        this.spinner.text = chalk.blue(
-          `🔍 Step ${this.stepCounter}: Getting external review from OpenAI (Claude not available)`
-        );
-
-        const prompt = `<Original>
+          const prompt = `<Original>
 ${this.config.sourceText}
 </Original>
 
@@ -836,50 +1031,57 @@ ${finalTranslation}
 Here is an original ${this.config.sourceLanguage} article and a ${this.config.targetLanguage} translation. Compare and critique the translation in terms of how well it captures the soul of the original and the dialectic, but also how it stands alone as a piece of writing. Provide actionable feedback, with possible inspiration from good ${this.config.targetLanguage} writers or pieces.
 
 Please format your response in <external_review> tags.`;
+          const response = await this.callOpenAI(prompt, 0, true);
+          const reviewMatch = response.match(
+            /<external_review>([\s\S]*)<\/external_review>/
+          );
+          externalReview = reviewMatch ? reviewMatch[1].trim() : response;
+        }
 
-        const response = await this.callOpenAI(prompt, 0, true); // Call as an external review (separate conversation)
-
-        // Extract from tags
-        const reviewMatch = response.match(
+        // Extract from tags if necessary (might be nested)
+        const reviewMatch = externalReview.match(
           /<external_review>([\s\S]*)<\/external_review>/
         );
-        externalReview = reviewMatch ? reviewMatch[1].trim() : response;
+        if (reviewMatch) externalReview = reviewMatch[1].trim();
+
+        this.spinner.succeed(
+          chalk.green(`🔍 Step ${this.stepCounter}: External review completed`)
+        );
+
+        fs.writeFileSync(externalReviewPath, externalReview);
+        this.outputFiles[stepKey] = externalReviewPath;
+        this.log(chalk.green("  ↪ External review saved to disk"));
+
+        const reviewMetrics = this.calculateMetrics(externalReview);
+        this.translationMetrics.set("external_review", reviewMetrics);
+        this.displayMetrics(stepKey, reviewMetrics);
+        reviewObtained = true;
+      } catch (error: any) {
+        this.spinner.warn(
+          chalk.yellow(
+            `⚠️ External review failed: ${
+              error?.message || error
+            }. Continuing without it.`
+          )
+        );
+        this.log(chalk.yellow("  ↪ Skipping external review due to error"));
+        reviewObtained = false;
+        // No review obtained, so we won't call applyExternalFeedback
+        return; // Exit early if review fails
       }
+    }
 
-      this.spinner.succeed(
-        chalk.green(`🔍 Step ${this.stepCounter}: External review completed`)
-      );
-
-      // Save the external review
-      const externalReviewPath = path.join(
-        this.config.outputDir,
-        "12_external_review.txt"
-      );
-      fs.writeFileSync(externalReviewPath, externalReview);
-      this.outputFiles["External Review"] = externalReviewPath;
-
-      this.log(chalk.green("  ↪ External review saved to disk"));
-
-      // Calculate and display metrics for external review
-      // Passing false (or omitting) here is correct for generated text
-      const reviewMetrics = this.calculateMetrics(externalReview);
-      this.translationMetrics.set("external_review", reviewMetrics);
-      this.displayMetrics("External Review", reviewMetrics);
-
-      // Apply external feedback to get a refined final translation
+    // Only apply feedback if a review was successfully obtained or loaded
+    if (reviewObtained && externalReview.trim()) {
       await this.applyExternalFeedback(finalTranslation, externalReview);
-    } catch (error: any) {
-      this.spinner.warn(
+    } else if (reviewObtained && !externalReview.trim()) {
+      this.log(
         chalk.yellow(
-          `⚠️ External review failed: ${
-            error?.message || error
-          }. Continuing without it.`
+          "  ↪ Skipping refinement: Loaded external review file is empty."
         )
       );
-      this.log(chalk.yellow("  ↪ Skipping external review due to error"));
-      // Optionally log the full error for debugging
-      // console.error(chalk.red("Full external review error:"), error);
     }
+    // If reviewObtained is false (due to error), we already returned
   }
 
   // Apply external feedback to get a refined final translation
@@ -887,11 +1089,38 @@ Please format your response in <external_review> tags.`;
     finalTranslation: string,
     externalReview: string
   ): Promise<void> {
-    this.stepCounter++;
-    this.translationSteps.push("Final Refinement");
+    const refinedFinalPath = path.join(
+      this.config.outputDir,
+      "13_refined_final_translation.txt"
+    );
+    const stepKey = "Final Refinement"; // Matches history reconstruction guess
+    const outputKey = "Refined Final Translation";
+
+    // Check if the final refined file already exists
+    if (fs.existsSync(refinedFinalPath)) {
+      this.log(
+        chalk.yellow(
+          `🔄 Skipping Step 10 (${stepKey}): Output file ${path.basename(
+            refinedFinalPath
+          )} already exists.`
+        )
+      );
+      if (!this.outputFiles[outputKey])
+        this.outputFiles[outputKey] = refinedFinalPath;
+      // Potentially load and display metrics for the existing file?
+      // For now, just skip.
+      return;
+    }
+
+    // Only increment counter if the step actually runs
+    // The counter increment for external review happens in getExternalReview
+    // We might need a dedicated counter increment here if we consider this a distinct step
+    // For simplicity, let's tie this to the getExternalReview step's counter
+    const currentStep = this.stepCounter; // Use counter from getExternalReview
+    this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
-        `✨ Step ${this.stepCounter}: Applying external feedback for final refinement`
+        `✨ Step ${currentStep}: Applying external feedback for final refinement`
       )
     );
 
@@ -910,10 +1139,9 @@ Please put your refined translation in <refined_final_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
     this.spinner.succeed(
-      chalk.green(`✨ Step ${this.stepCounter}: Final refinement completed`)
+      chalk.green(`✨ Step ${currentStep}: Final refinement completed`)
     );
 
-    // Extract refined final translation
     const refinedFinalMatch = response.match(
       /<refined_final_translation>([\s\S]*)<\/refined_final_translation>/
     );
@@ -921,24 +1149,16 @@ Please put your refined translation in <refined_final_translation> tags.`;
       ? refinedFinalMatch[1].trim()
       : response;
 
-    // Save the refined final translation
-    const refinedFinalPath = path.join(
-      this.config.outputDir,
-      "13_refined_final_translation.txt"
-    );
     fs.writeFileSync(refinedFinalPath, refinedFinalTranslation);
-    this.outputFiles["Refined Final Translation"] = refinedFinalPath;
-
+    this.outputFiles[outputKey] = refinedFinalPath;
     this.log(chalk.green("  ↪ Refined final translation saved to disk"));
 
-    // Calculate and display metrics for refined final translation
-    // Passing false (or omitting) here is correct for generated text
     const refinedFinalMetrics = this.calculateMetrics(refinedFinalTranslation);
     this.translationMetrics.set(
       "refined_final_translation",
       refinedFinalMetrics
     );
-    this.displayMetrics("Refined Final Translation", refinedFinalMetrics);
+    this.displayMetrics(outputKey, refinedFinalMetrics);
     this.displayComparisonWithSource(refinedFinalMetrics);
   }
 
@@ -1495,6 +1715,14 @@ program
   .option("-r, --retries <number>", "Maximum number of API call retries", "3")
   .option("-d, --delay <ms>", "Delay between retries in milliseconds", "5000")
   .option("--skip-external-review", "Skip external review step", false)
+  .option(
+    "--instructions <text>",
+    "Custom translation instructions (e.g., target audience, formality level, etc.)"
+  )
+  .option(
+    "--instructions-file <path>",
+    "Path to a file containing custom translation instructions"
+  )
   .action(async (options) => {
     try {
       // Validate input file exists
@@ -1537,6 +1765,36 @@ program
         );
       }
 
+      // Handle custom instructions (prioritize file over direct instructions)
+      let customInstructions = options.instructions || "";
+      if (options.instructionsFile && fs.existsSync(options.instructionsFile)) {
+        console.log(
+          chalk.green(
+            `📝 Reading custom instructions from file: ${options.instructionsFile}`
+          )
+        );
+        customInstructions = fs.readFileSync(options.instructionsFile, "utf-8");
+      } else if (options.instructionsFile) {
+        console.warn(
+          chalk.yellow(
+            `⚠️ Instructions file not found: ${options.instructionsFile}`
+          )
+        );
+      }
+
+      if (customInstructions) {
+        console.log(chalk.cyan("🔍 Using custom translation instructions"));
+        if (options.verbose) {
+          console.log(
+            chalk.dim("---------------- Custom Instructions ----------------")
+          );
+          console.log(chalk.dim(customInstructions));
+          console.log(
+            chalk.dim("---------------------------------------------------")
+          );
+        }
+      }
+
       console.log(chalk.cyan("🚀 Starting AI-powered translation workflow"));
       console.log(chalk.cyan(`📂 Output will be saved to: ${options.output}`));
 
@@ -1551,6 +1809,7 @@ program
         maxRetries: parseInt(options.retries),
         retryDelay: parseInt(options.delay),
         skipExternalReview: options.skipExternalReview,
+        customInstructions: customInstructions || undefined,
       };
 
       // Create and execute workflow
