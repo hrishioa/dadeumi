@@ -11,6 +11,53 @@ import Anthropic from "@anthropic-ai/sdk";
 // Load environment variables
 dotenv.config();
 
+// Define pricing data (cost per million tokens)
+const pricingData: Map<
+  string,
+  { inputCostPerMillion: number; outputCostPerMillion: number }
+> = new Map([
+  // OpenAI Models (Source: User provided pricing page snapshot, ~2024-12-17 dates)
+  // Note: Prices might change, verify with official OpenAI documentation.
+  ["gpt-4o", { inputCostPerMillion: 2.5, outputCostPerMillion: 10.0 }], // Assuming gpt-4o-2024-08-06
+  ["gpt-4o-mini", { inputCostPerMillion: 0.15, outputCostPerMillion: 0.6 }], // Assuming gpt-4o-mini-2024-07-18
+  ["o1", { inputCostPerMillion: 15.0, outputCostPerMillion: 60.0 }], // Assuming o1-2024-12-17 (Reasoning tokens billed as output)
+  ["o3-mini", { inputCostPerMillion: 1.1, outputCostPerMillion: 4.4 }], // Assuming o3-mini-2025-01-31 (Reasoning tokens billed as output)
+  // Add other specific versions if needed, e.g., gpt-4o-2024-08-06
+  [
+    "gpt-4o-2024-08-06",
+    { inputCostPerMillion: 2.5, outputCostPerMillion: 10.0 },
+  ],
+  [
+    "gpt-4o-mini-2024-07-18",
+    { inputCostPerMillion: 0.15, outputCostPerMillion: 0.6 },
+  ],
+  [
+    "gpt-4.5-preview",
+    { inputCostPerMillion: 75.0, outputCostPerMillion: 150.0 },
+  ],
+  // Anthropic Models (Updated based on user input for 3.7 Sonnet)
+  [
+    "claude-3-opus-20240229",
+    { inputCostPerMillion: 15.0, outputCostPerMillion: 75.0 },
+  ],
+  [
+    "claude-3-sonnet-20240229",
+    { inputCostPerMillion: 3.0, outputCostPerMillion: 15.0 },
+  ], // Older Sonnet
+  [
+    "claude-3-haiku-20240307",
+    { inputCostPerMillion: 0.25, outputCostPerMillion: 1.25 },
+  ],
+  [
+    "claude-3-5-sonnet-20240620",
+    { inputCostPerMillion: 3.0, outputCostPerMillion: 15.0 },
+  ], // Older Sonnet 3.5
+  [
+    "claude-3-7-sonnet-latest",
+    { inputCostPerMillion: 3.0, outputCostPerMillion: 15.0 },
+  ], // User specified
+]);
+
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -40,7 +87,7 @@ interface ConversationMessage {
 }
 
 interface TranslationConfig {
-  sourceLanguage: string;
+  sourceLanguage?: string; // Made optional
   targetLanguage: string;
   sourceText: string;
   outputDir: string;
@@ -50,6 +97,11 @@ interface TranslationConfig {
   retryDelay: number;
   skipExternalReview: boolean;
   customInstructions?: string;
+  reasoningEffort: "low" | "medium" | "high";
+  maxOutputTokens: number;
+  originalFilename: string; // Added for final output filename
+  originalExtension: string; // Added for final output filename
+  inputPath: string; // Added for convenience
 }
 
 interface TranslationMetrics {
@@ -65,8 +117,12 @@ interface TranslationMetrics {
 class TranslationWorkflow {
   private conversation: ConversationMessage[] = [];
   private config: TranslationConfig;
+  private intermediatesDir: string; // Path to intermediates folder
   private spinner = ora();
   private totalTokens = 0;
+  private totalInputTokens = 0;
+  private totalOutputTokens = 0;
+  private estimatedCost = 0;
   private xmlParser = new XMLParser({
     ignoreAttributes: false,
     preserveOrder: true,
@@ -77,33 +133,54 @@ class TranslationWorkflow {
     preserveOrder: true,
   });
   private translationSteps: string[] = [];
-  private outputFiles: { [key: string]: string } = {};
+  private outputFiles: { [key: string]: string } = {}; // Paths will be inside intermediatesDir
   private stepCounter = 0;
-  private conversationJsonPath: string;
-  private conversationTextPath: string;
+  private conversationJsonPath: string; // Path inside intermediatesDir
+  private conversationTextPath: string; // Path inside intermediatesDir
+  private metricsPath: string; // Path inside intermediatesDir
   private sourceMetrics: TranslationMetrics;
   private translationMetrics: Map<string, TranslationMetrics> = new Map();
+  private finalOutputPath: string; // Path for the final {name}-{lang}.ext file
 
   constructor(config: TranslationConfig) {
     this.config = config;
     let resumed = false; // Flag to indicate if we resumed from a previous state
 
-    // Create output directory if it doesn't exist
+    // Define intermediates directory path
+    this.intermediatesDir = path.join(
+      this.config.outputDir,
+      ".translation-intermediates"
+    );
+
+    // Define final output path
+    this.finalOutputPath = path.join(
+      this.config.outputDir,
+      `${this.config.originalFilename}-${this.config.targetLanguage}${this.config.originalExtension}`
+    );
+
+    // Create output and intermediates directories if they don't exist
     if (!fs.existsSync(this.config.outputDir)) {
       fs.mkdirSync(this.config.outputDir, { recursive: true });
     }
+    if (!fs.existsSync(this.intermediatesDir)) {
+      fs.mkdirSync(this.intermediatesDir, { recursive: true });
+    }
 
-    // Set paths for conversation history files
+    // Set paths for conversation and metrics files inside intermediates folder
     this.conversationJsonPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "conversation_history.json"
     );
     this.conversationTextPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "conversation_history.txt"
     );
+    this.metricsPath = path.join(
+      this.intermediatesDir,
+      "translation_metrics.json"
+    );
 
-    // Check for existing conversation history to resume
+    // Check for existing conversation history in intermediates to resume
     if (fs.existsSync(this.conversationJsonPath)) {
       try {
         const historyContent = fs.readFileSync(
@@ -114,55 +191,55 @@ class TranslationWorkflow {
 
         if (historyData.conversation && historyData.metadata) {
           this.conversation = historyData.conversation;
-          this.totalTokens = historyData.metadata.totalTokens || 0;
+          this.totalTokens = historyData.metadata.totalTokens || 0; // Load old total for potential backward compat
           this.stepCounter = historyData.metadata.step || 0;
           const lastLabel = historyData.metadata.label || "Unknown Step";
 
-          // Scan output directory for existing step files and populate outputFiles
-          const files = fs.readdirSync(this.config.outputDir);
+          // Load cost tracking data if available
+          this.totalInputTokens = historyData.metadata.totalInputTokens || 0;
+          this.totalOutputTokens = historyData.metadata.totalOutputTokens || 0;
+          this.estimatedCost = historyData.metadata.estimatedCost || 0;
+
+          // Scan intermediates directory for existing step files and populate outputFiles
+          const files = fs.readdirSync(this.intermediatesDir);
           files.forEach((file) => {
-            if (/^\\d{2}_.*\\.txt$/.test(file)) {
+            if (/^\d{2}_.*\.txt$/.test(file)) {
               // Match NN_*.txt files
               // Try to determine the step name from the filename (e.g., 01_initial_analysis -> Initial Analysis)
               const stepKey = file
                 .substring(3, file.length - 4)
                 .replace(/_/g, " ")
-                .replace(/\\b\\w/g, (l) => l.toUpperCase());
+                .replace(/\b\w/g, (l) => l.toUpperCase());
               this.outputFiles[stepKey] = path.join(
-                this.config.outputDir,
+                this.intermediatesDir,
                 file
               );
             }
           });
 
           // Reconstruct translationSteps based on found files (or stepCounter)
-          // Simple reconstruction based on stepCounter for now
           const stepNames = [
             "Initial Analysis",
             "Expression Exploration",
             "Cultural Adaptation Discussion",
             "Title & Inspiration Exploration",
             "First Translation",
-            "Self-Critique & First Refinement",
-            "Improved Translation", // Note: This step generates 07, but critique generates 06
-            "Second Refinement", // Note: This step generates 09, but critique generates 08
-            "Further Improved Translation",
-            "Final Translation", // Note: This step generates 11, but review generates 10
-            "Comprehensive Review",
-            "External Review", // Generates 12
-            "Final Refinement", // Generates 13
+            "Self-Critique & First Refinement", // Combined step name for history
+            "Second Refinement", // Combined step name for history
+            "Final Translation", // Primary outcome step name for history
+            "External Review",
+            "Final Refinement",
           ];
-          // This mapping needs refinement based on actual step logic and counter increments
-          // For now, approximate based on stepCounter
-          this.translationSteps = stepNames.slice(0, this.stepCounter); // Approximate reconstruction
+          // More robust reconstruction based on the keys found in outputFiles map might be better
+          this.translationSteps = Object.keys(this.outputFiles)
+            .map((key) => parseInt(key.substring(0, 2))) // Get step number prefix
+            .sort((a, b) => a - b) // Sort by step number
+            .map((num) => stepNames[num - 1]) // Map back to names (approximate)
+            .filter((name): name is string => !!name); // Filter out undefined
 
           // Load existing metrics
-          const metricsPath = path.join(
-            this.config.outputDir,
-            "translation_metrics.json"
-          );
-          if (fs.existsSync(metricsPath)) {
-            const metricsContent = fs.readFileSync(metricsPath, "utf-8");
+          if (fs.existsSync(this.metricsPath)) {
+            const metricsContent = fs.readFileSync(this.metricsPath, "utf-8");
             const metricsData = JSON.parse(metricsContent);
             this.sourceMetrics =
               metricsData.source ||
@@ -215,16 +292,25 @@ class TranslationWorkflow {
     this.sourceMetrics = this.calculateMetrics(this.config.sourceText, true);
     this.conversation = []; // Reset conversation
     this.totalTokens = 0;
+    this.totalInputTokens = 0;
+    this.totalOutputTokens = 0;
+    this.estimatedCost = 0;
     this.stepCounter = 0;
     this.translationSteps = [];
     this.translationMetrics = new Map();
     this.outputFiles = {};
 
     // Build system prompt
-    let systemPrompt = `You are an expert literary translator with deep fluency in ${this.config.sourceLanguage} and ${this.config.targetLanguage}.
+    let systemPrompt = `You are an expert literary translator with deep fluency in ${
+      this.config.targetLanguage
+    }${this.config.sourceLanguage ? ` and ${this.config.sourceLanguage}` : ""}.
     Your goal is to create a high-quality translation that preserves the original's tone, style, literary devices,
     cultural nuances, and overall impact. You prioritize readability and naturalness in the target language while
-    staying faithful to the source text's meaning and intention.
+    staying faithful to the source text's meaning and intention${
+      this.config.sourceLanguage
+        ? ""
+        : " (you may need to infer the source language from the text provided)"
+    }.
 
     Always place your translations inside appropriate XML tags for easy extraction:
     - Initial analysis: <analysis>your analysis here</analysis>
@@ -238,6 +324,8 @@ class TranslationWorkflow {
     - Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
     - Comprehensive review: <review>your comprehensive review here</review>
     - Final translation: <final_translation>your final translation here</final_translation>
+    - External review: <external_review>your external review here</external_review>
+    - Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>
 
     Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
     Think deeply about cultural context, idiomatic expressions, and literary devices that would resonate with native
@@ -263,53 +351,73 @@ class TranslationWorkflow {
     this.logHeader("Starting Translation Workflow");
     this.log(
       chalk.blue(
-        `📄 Translating from ${this.config.sourceLanguage} to ${this.config.targetLanguage}`
+        `📄 Translating ${
+          this.config.sourceLanguage
+            ? `from ${this.config.sourceLanguage} `
+            : ""
+        }to ${this.config.targetLanguage}`
       )
     );
+    this.log(chalk.blue(`   Input file: ${this.config.inputPath}`));
+    this.log(chalk.blue(`   Output file: ${this.finalOutputPath}`));
+    this.log(chalk.blue(`   Intermediates: ${this.intermediatesDir}`));
     this.displaySourceMetrics();
 
-    try {
-      // Record start time for tracking duration
-      const startTime = Date.now();
+    const startTime = Date.now();
+    let latestTranslationContent = ""; // Track the latest completed translation text
 
-      // Step 1: Initial analysis of what to preserve
+    try {
+      // Step 1: Initial analysis
       await this.initialAnalysis();
 
-      // Step 2: Exploring expression in target language
+      // Step 2: Exploring expression
       await this.expressionExploration();
 
-      // Step 3: Discussion on tone, honorifics, and cultural adaptation
+      // Step 3: Tone and cultural discussion
       await this.toneAndCulturalDiscussion();
 
-      // Step 4: Title translation and literary inspiration
+      // Step 4: Title and inspiration
       await this.titleAndInspirationExploration();
 
-      // Step 5: First translation attempt
-      const firstTranslation = await this.firstTranslationAttempt();
+      // Step 5: First translation
+      latestTranslationContent = await this.firstTranslationAttempt();
 
-      // Step 6: Self-critique and first refinement
-      const improvedTranslation = await this.selfCritiqueAndRefinement(
-        firstTranslation
+      // Step 6: Self-critique & first refinement
+      latestTranslationContent = await this.selfCritiqueAndRefinement(
+        latestTranslationContent
       );
 
-      // Step 7: Further review and improvement (second iteration)
-      const furtherImprovedTranslation = await this.furtherRefinement(
-        improvedTranslation
+      // Step 7: Second refinement
+      latestTranslationContent = await this.furtherRefinement(
+        latestTranslationContent
       );
 
-      // Step 8: Final translation with comprehensive review
-      const finalTranslation = await this.finalTranslation(
-        furtherImprovedTranslation
+      // Step 8: Final translation & review
+      latestTranslationContent = await this.finalTranslation(
+        latestTranslationContent
       );
 
-      // Step 9: External review using Anthropic Claude 3.7 (if available) or another OpenAI call
+      // Step 9: External review (conditionally calls step 10)
       if (!this.config.skipExternalReview) {
-        await this.getExternalReview(finalTranslation);
+        // applyExternalFeedback is called internally if review succeeds
+        // We need the potentially refined content from it
+        const refinedContent = await this.getExternalReview(
+          latestTranslationContent
+        );
+        if (refinedContent !== null) {
+          // Check if refinement happened
+          latestTranslationContent = refinedContent;
+        }
       }
 
-      // Save the translation and metrics
-      this.saveTranslation(finalTranslation);
+      // Save metrics (now happens within steps or here)
       this.saveTranslationMetrics();
+
+      // Save the final translation (successful run)
+      fs.writeFileSync(this.finalOutputPath, latestTranslationContent);
+      this.log(
+        chalk.green(`✅ Final translation saved to: ${this.finalOutputPath}`)
+      );
 
       // Record and display completion metrics
       const endTime = Date.now();
@@ -324,38 +432,48 @@ class TranslationWorkflow {
         )
       );
       this.log(
-        chalk.yellow(
-          `💰 Total tokens used: ${this.totalTokens.toLocaleString()}`
+        chalk.cyan(`   Input tokens: ${this.totalInputTokens.toLocaleString()}`)
+      );
+      this.log(
+        chalk.cyan(
+          `   Output tokens: ${this.totalOutputTokens.toLocaleString()}`
         )
       );
-      const estimatedCost = (this.totalTokens / 1000) * 0.002; // Approximate cost calculation
-      this.log(chalk.yellow(`💲 Estimated cost: $${estimatedCost.toFixed(4)}`));
       this.log(
-        chalk.green(`📁 Output files saved to: ${this.config.outputDir}`)
+        chalk.yellow(
+          `💲 Estimated total cost: $${this.estimatedCost.toFixed(4)}`
+        )
+      );
+      this.log(
+        chalk.green(`📁 Intermediate files saved to: ${this.intermediatesDir}`)
+      );
+      this.log(
+        chalk.green(`📄 Final output saved to: ${this.finalOutputPath}`)
       );
 
-      // Display all output files
-      this.log(chalk.magenta("\n📋 Generated Files:"));
+      // Display all intermediate output files
+      this.log(chalk.magenta("\n📋 Generated Intermediate Files:"));
       Object.entries(this.outputFiles).forEach(([key, filePath]) => {
-        this.log(chalk.cyan(`   ${key}: ${filePath}`));
+        // Display relative path from outputDir for clarity
+        const relativePath = path.relative(this.config.outputDir, filePath);
+        this.log(chalk.cyan(`   ${key}: ${relativePath}`));
       });
 
       // Display translation journey metrics
       this.displayTranslationJourney();
     } catch (error) {
-      this.spinner.fail("Translation process failed");
-      console.error(chalk.red("❌ Error during translation:"), error);
-      throw error;
+      // Let the main catch block handle this after saving latest translation
+      throw error; // Re-throw for the main handler
     }
   }
 
   // Step 1: Initial analysis
   private async initialAnalysis(): Promise<void> {
     const outputPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "01_initial_analysis.txt"
     );
-    const stepKey = "Initial Analysis";
+    const stepKey = "01 Initial Analysis";
 
     if (fs.existsSync(outputPath)) {
       this.log(
@@ -363,7 +481,6 @@ class TranslationWorkflow {
           `🔄 Skipping Step 1 (${stepKey}): Output file already exists.`
         )
       );
-      // Ensure outputFiles map is populated if resuming
       if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
       return;
     }
@@ -374,7 +491,9 @@ class TranslationWorkflow {
       chalk.blue(`📊 Step ${this.stepCounter}: Analyzing source text`)
     );
 
-    const prompt = `I'd like your help translating a text from ${this.config.sourceLanguage} to ${this.config.targetLanguage}.
+    const prompt = `I'd like your help translating a text into ${
+      this.config.targetLanguage
+    }${this.config.sourceLanguage ? ` from ${this.config.sourceLanguage}` : ""}.
 Before we start, could you analyze what we'll need to preserve in terms of tone, style, meaning, and cultural nuances?
 
 Here's the text:
@@ -396,7 +515,7 @@ Remember to put your analysis in <analysis> tags.`;
 
     fs.writeFileSync(outputPath, analysis);
     this.outputFiles[stepKey] = outputPath;
-    this.log(chalk.green("  ↪ Analysis saved to disk"));
+    this.log(chalk.green("  ↪ Analysis saved to intermediates"));
 
     const metrics = this.calculateMetrics(analysis);
     this.translationMetrics.set("analysis", metrics);
@@ -406,10 +525,10 @@ Remember to put your analysis in <analysis> tags.`;
   // Step 2: Exploring expression in target language
   private async expressionExploration(): Promise<void> {
     const outputPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "02_expression_exploration.txt"
     );
-    const stepKey = "Expression Exploration";
+    const stepKey = "02 Expression Exploration";
 
     if (fs.existsSync(outputPath)) {
       this.log(
@@ -429,13 +548,25 @@ Remember to put your analysis in <analysis> tags.`;
       )
     );
 
-    const prompt = `Now that we've analyzed the text, I'm curious about how we could express these elements in ${this.config.targetLanguage}.
+    const prompt = `Now that we've analyzed the text, I'm curious about how we could express these elements in ${
+      this.config.targetLanguage
+    }${
+      this.config.sourceLanguage
+        ? ` (considering it's from ${this.config.sourceLanguage})`
+        : ""
+    }.
 
-How might we capture the tone and style of the original in ${this.config.targetLanguage}? Are there particular expressions,
-idioms, or literary devices in ${this.config.targetLanguage} that could help convey the same feeling and impact?
+How might we capture the tone and style of the original in ${
+      this.config.targetLanguage
+    }? Are there particular expressions,
+idioms, or literary devices in ${
+      this.config.targetLanguage
+    } that could help convey the same feeling and impact?
 
 What about cultural references or metaphors? Could you suggest some ways to handle those elements that would resonate
-with ${this.config.targetLanguage} speakers while staying true to the original's intent?
+with ${
+      this.config.targetLanguage
+    } speakers while staying true to the original's intent?
 
 I'd love some specific examples or suggestions that we could use in our translation. Please include your thoughts
 in <expression_exploration> tags.`;
@@ -456,7 +587,7 @@ in <expression_exploration> tags.`;
 
     fs.writeFileSync(outputPath, exploration);
     this.outputFiles[stepKey] = outputPath;
-    this.log(chalk.green("  ↪ Expression exploration saved to disk"));
+    this.log(chalk.green("  ↪ Expression exploration saved to intermediates"));
 
     const metrics = this.calculateMetrics(exploration);
     this.translationMetrics.set("exploration", metrics);
@@ -466,10 +597,10 @@ in <expression_exploration> tags.`;
   // Step 3: Discussion on tone, honorifics, and cultural adaptation
   private async toneAndCulturalDiscussion(): Promise<void> {
     const outputPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "03_cultural_discussion.txt"
     );
-    const stepKey = "Cultural Adaptation Discussion"; // Matches history reconstruction guess
+    const stepKey = "03 Cultural Adaptation Discussion";
 
     if (fs.existsSync(outputPath)) {
       this.log(
@@ -489,16 +620,24 @@ in <expression_exploration> tags.`;
       )
     );
 
-    const prompt = `Let's discuss some specific aspects of our translation approach:
+    const prompt = `Let's discuss some specific aspects of our translation approach for translating into ${
+      this.config.targetLanguage
+    }${this.config.sourceLanguage ? ` from ${this.config.sourceLanguage}` : ""}:
 
-What do you think would be the most appropriate tone or level of honorifics to use in this ${this.config.targetLanguage} translation?
+What do you think would be the most appropriate tone or level of honorifics to use in this ${
+      this.config.targetLanguage
+    } translation?
 I understand there might be cultural differences to consider. What would feel most natural and appropriate given the content and style of the original?
 
-Are there any cultural references or allegories in ${this.config.targetLanguage} that might help convey the essence of certain passages,
+Are there any cultural references or allegories in ${
+      this.config.targetLanguage
+    } that might help convey the essence of certain passages,
 even if they slightly modify the literal meaning? I'm fine with creative adaptation as long as the core message is preserved.
 
 How can we ensure the translation maintains a distinctive personal voice, rather than sounding generic?
-What would you say is unique about the original's voice, and how could we capture that in ${this.config.targetLanguage}?
+What would you say is unique about the original's voice, and how could we capture that in ${
+      this.config.targetLanguage
+    }?
 
 Please share your thoughts in <cultural_discussion> tags.`;
 
@@ -516,7 +655,9 @@ Please share your thoughts in <cultural_discussion> tags.`;
 
     fs.writeFileSync(outputPath, discussion);
     this.outputFiles[stepKey] = outputPath;
-    this.log(chalk.green("  ↪ Cultural adaptation discussion saved to disk"));
+    this.log(
+      chalk.green("  ↪ Cultural adaptation discussion saved to intermediates")
+    );
 
     const metrics = this.calculateMetrics(discussion);
     this.translationMetrics.set("cultural_discussion", metrics);
@@ -525,8 +666,8 @@ Please share your thoughts in <cultural_discussion> tags.`;
 
   // Step 4: Title translation and literary inspiration
   private async titleAndInspirationExploration(): Promise<void> {
-    const outputPath = path.join(this.config.outputDir, "04_title_options.txt");
-    const stepKey = "Title & Inspiration Exploration"; // Matches history reconstruction guess
+    const outputPath = path.join(this.intermediatesDir, "04_title_options.txt");
+    const stepKey = "04 Title & Inspiration Exploration";
 
     if (fs.existsSync(outputPath)) {
       this.log(
@@ -546,16 +687,26 @@ Please share your thoughts in <cultural_discussion> tags.`;
       )
     );
 
-    const prompt = `Let's talk about a few more aspects before we start the actual translation:
+    const prompt = `Let's talk about a few more aspects before we start the actual translation into ${
+      this.config.targetLanguage
+    }${this.config.sourceLanguage ? ` from ${this.config.sourceLanguage}` : ""}:
 
-What might be a good way to translate the title into ${this.config.targetLanguage}? Could you suggest a few options
+What might be a good way to translate the title into ${
+      this.config.targetLanguage
+    }? Could you suggest a few options
 that would capture the essence and appeal while being culturally appropriate?
 
-Are there any ${this.config.targetLanguage} writers or texts with a similar style or thematic focus that might
+Are there any ${
+      this.config.targetLanguage
+    } writers or texts with a similar style or thematic focus that might
 serve as inspiration for our translation approach? I'd find it helpful to know if this reminds you of particular writers or works.
 
-What common pitfalls should we be careful to avoid when translating this type of content from ${this.config.sourceLanguage}
-to ${this.config.targetLanguage}? Any particular challenges or mistakes that translators often make?
+What common pitfalls should we be careful to avoid when translating this type of content from ${
+      this.config.sourceLanguage
+    }
+to ${
+      this.config.targetLanguage
+    }? Any particular challenges or mistakes that translators often make?
 
 Please share your thoughts in <title_options> tags.`;
 
@@ -573,7 +724,9 @@ Please share your thoughts in <title_options> tags.`;
 
     fs.writeFileSync(outputPath, options);
     this.outputFiles[stepKey] = outputPath;
-    this.log(chalk.green("  ↪ Title options and inspiration saved to disk"));
+    this.log(
+      chalk.green("  ↪ Title options and inspiration saved to intermediates")
+    );
 
     const metrics = this.calculateMetrics(options);
     this.translationMetrics.set("title_options", metrics);
@@ -583,10 +736,10 @@ Please share your thoughts in <title_options> tags.`;
   // Step 5: First translation attempt
   private async firstTranslationAttempt(): Promise<string> {
     const outputPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "05_first_translation.txt"
     );
-    const stepKey = "First Translation";
+    const stepKey = "05 First Translation";
 
     if (fs.existsSync(outputPath)) {
       this.log(
@@ -595,7 +748,6 @@ Please share your thoughts in <title_options> tags.`;
         )
       );
       if (!this.outputFiles[stepKey]) this.outputFiles[stepKey] = outputPath;
-      // Read and return content from existing file
       return fs.readFileSync(outputPath, "utf-8");
     }
 
@@ -608,7 +760,11 @@ Please share your thoughts in <title_options> tags.`;
     );
 
     const prompt = `I think we're ready to start translating! Based on our discussions so far, could you create
-a first draft translation of the text into ${this.config.targetLanguage}?
+a first draft translation of the text into ${this.config.targetLanguage}${
+      this.config.sourceLanguage
+        ? ` (from the original ${this.config.sourceLanguage})`
+        : ""
+    }?
 
 Here's the original text again for reference:
 
@@ -634,7 +790,7 @@ Remember to put your translation in <first_translation> tags.`;
 
     fs.writeFileSync(outputPath, firstTranslation);
     this.outputFiles[stepKey] = outputPath;
-    this.log(chalk.green("  ↪ First draft translation saved to disk"));
+    this.log(chalk.green("  ↪ First draft translation saved to intermediates"));
 
     const metrics = this.calculateMetrics(firstTranslation);
     this.translationMetrics.set("first_translation", metrics);
@@ -648,26 +804,25 @@ Remember to put your translation in <first_translation> tags.`;
     previousTranslation: string
   ): Promise<string> {
     const critiquePath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "06_first_critique.txt"
     );
     const improvedPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "07_improved_translation.txt"
     );
-    const stepKeyCritique = "First Critique";
-    const stepKeyImproved = "Improved Translation"; // Matches history reconstruction guess
+    const stepKeyCritique = "06 First Critique";
+    const stepKeyImproved = "07 Improved Translation";
+    const combinedStepName = "Self-Critique & First Refinement";
 
-    // Check if the *result* of this step (improved translation) already exists
     if (fs.existsSync(improvedPath)) {
       this.log(
         chalk.yellow(
-          `🔄 Skipping Step 6 (Self-Critique & First Refinement): Output file ${path.basename(
+          `🔄 Skipping Step 6 (${combinedStepName}): Output file ${path.basename(
             improvedPath
           )} already exists.`
         )
       );
-      // Ensure both files are mapped if resuming
       if (!this.outputFiles[stepKeyCritique] && fs.existsSync(critiquePath))
         this.outputFiles[stepKeyCritique] = critiquePath;
       if (!this.outputFiles[stepKeyImproved])
@@ -675,8 +830,8 @@ Remember to put your translation in <first_translation> tags.`;
       return fs.readFileSync(improvedPath, "utf-8");
     }
 
-    this.stepCounter++; // Increment counter only if step runs
-    this.translationSteps.push("Self-Critique & First Refinement"); // Combined step name
+    this.stepCounter++;
+    this.translationSteps.push(combinedStepName);
     this.spinner.start(
       chalk.blue(
         `🔄 Step ${this.stepCounter}: Performing self-critique and first refinement`
@@ -727,7 +882,9 @@ Please put your critique in <critique> tags and your complete improved translati
     this.outputFiles[stepKeyImproved] = improvedPath;
 
     this.log(
-      chalk.green("  ↪ Critique and improved translation saved to disk")
+      chalk.green(
+        "  ↪ Critique and improved translation saved to intermediates"
+      )
     );
 
     const critiqueMetrics = this.calculateMetrics(critique);
@@ -746,26 +903,25 @@ Please put your critique in <critique> tags and your complete improved translati
     previousTranslation: string
   ): Promise<string> {
     const critiquePath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "08_second_critique.txt"
     );
     const furtherImprovedPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "09_further_improved_translation.txt"
     );
-    const stepKeyCritique = "Second Critique";
-    const stepKeyImproved = "Further Improved Translation"; // Matches history reconstruction guess
+    const stepKeyCritique = "08 Second Critique";
+    const stepKeyImproved = "09 Further Improved Translation";
+    const combinedStepName = "Second Refinement";
 
-    // Check if the *result* of this step (further improved translation) already exists
     if (fs.existsSync(furtherImprovedPath)) {
       this.log(
         chalk.yellow(
-          `🔄 Skipping Step 7 (Second Refinement): Output file ${path.basename(
+          `🔄 Skipping Step 7 (${combinedStepName}): Output file ${path.basename(
             furtherImprovedPath
           )} already exists.`
         )
       );
-      // Ensure both files are mapped if resuming
       if (!this.outputFiles[stepKeyCritique] && fs.existsSync(critiquePath))
         this.outputFiles[stepKeyCritique] = critiquePath;
       if (!this.outputFiles[stepKeyImproved])
@@ -773,8 +929,8 @@ Please put your critique in <critique> tags and your complete improved translati
       return fs.readFileSync(furtherImprovedPath, "utf-8");
     }
 
-    this.stepCounter++; // Increment counter only if step runs
-    this.translationSteps.push("Second Refinement"); // Combined step name
+    this.stepCounter++;
+    this.translationSteps.push(combinedStepName);
     this.spinner.start(
       chalk.blue(
         `🔄 Step ${this.stepCounter}: Performing second round of refinement`
@@ -827,7 +983,7 @@ in <further_improved_translation> tags.`;
 
     this.log(
       chalk.green(
-        "  ↪ Second critique and further improved translation saved to disk"
+        "  ↪ Second critique and further improved translation saved to intermediates"
       )
     );
 
@@ -850,26 +1006,25 @@ in <further_improved_translation> tags.`;
   // Step 8: Final translation with comprehensive review
   private async finalTranslation(previousTranslation: string): Promise<string> {
     const reviewPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "10_comprehensive_review.txt"
     );
     const finalTranslationPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "11_final_translation.txt"
     );
-    const stepKeyReview = "Comprehensive Review"; // Matches history reconstruction guess
-    const stepKeyFinal = "Final Translation (Pre-External Review)";
+    const stepKeyReview = "10 Comprehensive Review";
+    const stepKeyFinal = "11 Final Translation";
+    const combinedStepName = "Final Translation & Review";
 
-    // Check if the *result* of this step (final translation) already exists
     if (fs.existsSync(finalTranslationPath)) {
       this.log(
         chalk.yellow(
-          `🔄 Skipping Step 8 (Final Translation): Output file ${path.basename(
+          `🔄 Skipping Step 8 (${combinedStepName}): Output file ${path.basename(
             finalTranslationPath
           )} already exists.`
         )
       );
-      // Ensure both files are mapped if resuming
       if (!this.outputFiles[stepKeyReview] && fs.existsSync(reviewPath))
         this.outputFiles[stepKeyReview] = reviewPath;
       if (!this.outputFiles[stepKeyFinal])
@@ -877,9 +1032,8 @@ in <further_improved_translation> tags.`;
       return fs.readFileSync(finalTranslationPath, "utf-8");
     }
 
-    this.stepCounter++; // Increment counter only if step runs
-    // Need to decide if translationSteps should include "Comprehensive Review" and "Final Translation" separately
-    this.translationSteps.push("Final Translation"); // Using the primary outcome step name
+    this.stepCounter++;
+    this.translationSteps.push(combinedStepName);
     this.spinner.start(
       chalk.blue(
         `🏁 Step ${this.stepCounter}: Creating final translation with comprehensive review`
@@ -929,7 +1083,7 @@ Please put your review in <review> tags and your complete final translation in <
 
     this.log(
       chalk.green(
-        "  ↪ Comprehensive review and final translation saved to disk"
+        "  ↪ Comprehensive review and final translation saved to intermediates"
       )
     );
 
@@ -939,23 +1093,27 @@ Please put your review in <review> tags and your complete final translation in <
 
     const finalMetrics = this.calculateMetrics(finalTranslation);
     this.translationMetrics.set("final_translation", finalMetrics);
-    this.displayMetrics("Final Translation", finalMetrics); // Use simpler label for display
+    this.displayMetrics(stepKeyFinal, finalMetrics);
     this.displayComparisonWithSource(finalMetrics);
 
     return finalTranslation;
   }
 
   // Step 9: External review using Anthropic Claude or OpenAI
-  private async getExternalReview(finalTranslation: string): Promise<void> {
+  // Returns the refined translation content if refinement occurred, otherwise null
+  private async getExternalReview(
+    finalTranslation: string
+  ): Promise<string | null> {
     const externalReviewPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "12_external_review.txt"
     );
-    const stepKey = "External Review";
+    const stepKey = "12 External Review";
+    const anthropicModel = "claude-3-7-sonnet-latest"; // Use latest Sonnet model
     let externalReview = "";
     let reviewObtained = false;
+    let refinedTranslation: string | null = null; // Store potential refinement
 
-    // Check if external review file already exists
     if (fs.existsSync(externalReviewPath)) {
       this.log(
         chalk.yellow(
@@ -968,7 +1126,6 @@ Please put your review in <review> tags and your complete final translation in <
       reviewObtained = true;
       // Proceed to apply feedback even if review was loaded from file
     } else {
-      // Only execute the API call part if the file doesn't exist
       this.stepCounter++;
       this.translationSteps.push(stepKey);
       this.spinner.start(
@@ -978,12 +1135,17 @@ Please put your review in <review> tags and your complete final translation in <
       try {
         if (anthropic) {
           this.spinner.text = chalk.blue(
-            `🔍 Step ${this.stepCounter}: Getting external review from Claude 3.7 Sonnet`
+            `🔍 Step ${this.stepCounter}: Getting external review from Claude 3.7 Sonnet (Latest)`
           );
+          this.log(chalk.dim(`  🧠 Enabling Extended Thinking/Output (Beta)`));
           const response = await anthropic.beta.messages.create({
-            model: "claude-3-7-sonnet-20250219",
-            max_tokens: 16000,
+            model: anthropicModel,
+            max_tokens: 100000, // Increase for extended output/thinking
             temperature: 1,
+            thinking: {
+              type: "enabled",
+              budget_tokens: 32000, // Allocate budget for thinking (example value)
+            },
             messages: [
               {
                 role: "user",
@@ -1005,7 +1167,9 @@ Please format your response in <external_review> tags.`,
                 ],
               },
             ],
+            betas: ["output-128k-2025-02-19"], // Enable extended output beta
           });
+
           if (response.content[0]?.type === "text") {
             externalReview = response.content[0].text;
           } else {
@@ -1016,6 +1180,13 @@ Please format your response in <external_review> tags.`,
             );
             externalReview = ""; // Default to empty if unexpected format
           }
+
+          // Update Anthropic tokens and cost
+          const inputTokens = response.usage?.input_tokens || 0;
+          const outputTokens = response.usage?.output_tokens || 0;
+          this.totalInputTokens += inputTokens;
+          this.totalOutputTokens += outputTokens;
+          this.updateCost(anthropicModel, inputTokens, outputTokens);
         } else {
           this.spinner.text = chalk.blue(
             `🔍 Step ${this.stepCounter}: Getting external review from OpenAI (Claude not available)`
@@ -1038,19 +1209,13 @@ Please format your response in <external_review> tags.`;
           externalReview = reviewMatch ? reviewMatch[1].trim() : response;
         }
 
-        // Extract from tags if necessary (might be nested)
-        const reviewMatch = externalReview.match(
-          /<external_review>([\s\S]*)<\/external_review>/
-        );
-        if (reviewMatch) externalReview = reviewMatch[1].trim();
-
         this.spinner.succeed(
           chalk.green(`🔍 Step ${this.stepCounter}: External review completed`)
         );
 
         fs.writeFileSync(externalReviewPath, externalReview);
         this.outputFiles[stepKey] = externalReviewPath;
-        this.log(chalk.green("  ↪ External review saved to disk"));
+        this.log(chalk.green("  ↪ External review saved to intermediates"));
 
         const reviewMetrics = this.calculateMetrics(externalReview);
         this.translationMetrics.set("external_review", reviewMetrics);
@@ -1066,14 +1231,16 @@ Please format your response in <external_review> tags.`;
         );
         this.log(chalk.yellow("  ↪ Skipping external review due to error"));
         reviewObtained = false;
-        // No review obtained, so we won't call applyExternalFeedback
-        return; // Exit early if review fails
+        return null; // Exit early if review fails
       }
     }
 
     // Only apply feedback if a review was successfully obtained or loaded
     if (reviewObtained && externalReview.trim()) {
-      await this.applyExternalFeedback(finalTranslation, externalReview);
+      refinedTranslation = await this.applyExternalFeedback(
+        finalTranslation,
+        externalReview
+      );
     } else if (reviewObtained && !externalReview.trim()) {
       this.log(
         chalk.yellow(
@@ -1081,22 +1248,23 @@ Please format your response in <external_review> tags.`;
         )
       );
     }
-    // If reviewObtained is false (due to error), we already returned
+
+    return refinedTranslation; // Return refined content or null
   }
 
   // Apply external feedback to get a refined final translation
+  // Returns the refined translation content
   private async applyExternalFeedback(
     finalTranslation: string,
     externalReview: string
-  ): Promise<void> {
+  ): Promise<string> {
     const refinedFinalPath = path.join(
-      this.config.outputDir,
+      this.intermediatesDir,
       "13_refined_final_translation.txt"
     );
-    const stepKey = "Final Refinement"; // Matches history reconstruction guess
+    const stepKey = "13 Final Refinement";
     const outputKey = "Refined Final Translation";
 
-    // Check if the final refined file already exists
     if (fs.existsSync(refinedFinalPath)) {
       this.log(
         chalk.yellow(
@@ -1107,20 +1275,14 @@ Please format your response in <external_review> tags.`;
       );
       if (!this.outputFiles[outputKey])
         this.outputFiles[outputKey] = refinedFinalPath;
-      // Potentially load and display metrics for the existing file?
-      // For now, just skip.
-      return;
+      return fs.readFileSync(refinedFinalPath, "utf-8");
     }
 
-    // Only increment counter if the step actually runs
-    // The counter increment for external review happens in getExternalReview
-    // We might need a dedicated counter increment here if we consider this a distinct step
-    // For simplicity, let's tie this to the getExternalReview step's counter
-    const currentStep = this.stepCounter; // Use counter from getExternalReview
+    this.stepCounter++;
     this.translationSteps.push(stepKey);
     this.spinner.start(
       chalk.blue(
-        `✨ Step ${currentStep}: Applying external feedback for final refinement`
+        `✨ Step ${this.stepCounter}: Applying external feedback for final refinement`
       )
     );
 
@@ -1139,7 +1301,7 @@ Please put your refined translation in <refined_final_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
     this.spinner.succeed(
-      chalk.green(`✨ Step ${currentStep}: Final refinement completed`)
+      chalk.green(`✨ Step ${this.stepCounter}: Final refinement completed`)
     );
 
     const refinedFinalMatch = response.match(
@@ -1151,15 +1313,19 @@ Please put your refined translation in <refined_final_translation> tags.`;
 
     fs.writeFileSync(refinedFinalPath, refinedFinalTranslation);
     this.outputFiles[outputKey] = refinedFinalPath;
-    this.log(chalk.green("  ↪ Refined final translation saved to disk"));
+    this.log(
+      chalk.green("  ↪ Refined final translation saved to intermediates")
+    );
 
     const refinedFinalMetrics = this.calculateMetrics(refinedFinalTranslation);
     this.translationMetrics.set(
       "refined_final_translation",
       refinedFinalMetrics
     );
-    this.displayMetrics(outputKey, refinedFinalMetrics);
+    this.displayMetrics(stepKey, refinedFinalMetrics);
     this.displayComparisonWithSource(refinedFinalMetrics);
+
+    return refinedFinalTranslation;
   }
 
   // Helper method to call OpenAI API
@@ -1170,15 +1336,16 @@ Please put your refined translation in <refined_final_translation> tags.`;
   ): Promise<string> {
     // Declare currentStepLabel here and initialize with a default value
     let currentStepLabel: string = "Unknown Step (Error before assignment)";
+    const modelName = this.config.modelName;
+    const isReasoningModel =
+      modelName.startsWith("o1") || modelName.startsWith("o3");
 
     try {
       // Prepare a descriptive step name for logging
-      // Ensure translationSteps is not empty before accessing the last element
       const stepName =
         this.translationSteps.length > 0
           ? this.translationSteps[this.translationSteps.length - 1]
           : "Initial Step"; // Fallback label
-      // Assign value inside the try block
       currentStepLabel = isExternalReview
         ? `External Review (OpenAI)`
         : `Step ${this.stepCounter} - ${stepName}`;
@@ -1190,8 +1357,18 @@ Please put your refined translation in <refined_final_translation> tags.`;
         // Create a new conversation for external review
         messages.push({
           role: "system",
-          content: `You are an expert literary translator and critic with deep fluency in ${this.config.sourceLanguage} and ${this.config.targetLanguage}.
-Your task is to critically review a translation from ${this.config.sourceLanguage} to ${this.config.targetLanguage}, providing detailed,
+          content: `You are an expert literary translator and critic with deep fluency in ${
+            this.config.targetLanguage
+          }${
+            this.config.sourceLanguage
+              ? ` and ${this.config.sourceLanguage}`
+              : ""
+          }.
+Your task is to critically review a translation ${
+            this.config.sourceLanguage
+              ? `from ${this.config.sourceLanguage} `
+              : ""
+          }to ${this.config.targetLanguage}, providing detailed,
 constructive feedback on how well it captures the essence, tone, and cultural nuances of the original text.
 Please be candid but fair in your assessment.`,
         });
@@ -1208,25 +1385,94 @@ Please be candid but fair in your assessment.`,
         messages = this.conversation;
       }
 
-      // Save conversation history before API call (only for main conversation)
+      // Save conversation history before API call (only for main conversation, not external review)
       if (!isExternalReview) {
         // Use the defined currentStepLabel
         this.saveConversationHistory(currentStepLabel);
       }
 
-      // Call OpenAI API
-      const completion = await openai.chat.completions.create({
-        model: this.config.modelName,
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 8192, // Increased max_tokens from previous edit
-      });
+      let responseContent = "";
+      let inputTokens = 0;
+      let outputTokens = 0;
 
-      // Update token count
-      this.totalTokens += completion.usage?.total_tokens || 0;
+      // --- Call appropriate OpenAI API based on model type ---
+      if (isReasoningModel) {
+        // --- Use Responses API for o1/o3 models ---
+        this.log(chalk.dim(`  🧠 Using Responses API for model: ${modelName}`));
+
+        // Format input for Responses API (combine system + user prompt)
+        let combinedPrompt = "";
+        if (messages[0]?.role === "system") {
+          combinedPrompt = messages[0].content + "\n\n---\n\n";
+          combinedPrompt += messages
+            .slice(1)
+            .map((m) => `${m.role}: ${m.content}`)
+            .join("\n\n"); // Simple combination
+        } else {
+          // Fallback if no system prompt (shouldn't happen with current structure)
+          combinedPrompt = messages
+            .map((m) => `${m.role}: ${m.content}`)
+            .join("\n\n");
+        }
+
+        const response = await openai.responses.create({
+          model: modelName,
+          input: [{ role: "user", content: combinedPrompt }],
+          reasoning: { effort: this.config.reasoningEffort },
+          max_output_tokens: this.config.maxOutputTokens,
+        });
+
+        responseContent = response.output_text || "";
+        inputTokens = response.usage?.input_tokens || 0;
+        outputTokens = response.usage?.output_tokens || 0; // Includes reasoning tokens
+
+        // Check for incomplete response due to token limits
+        if (
+          response.status === "incomplete" &&
+          response.incomplete_details?.reason === "max_output_tokens"
+        ) {
+          this.log(
+            chalk.yellow(
+              `  ⚠️ Response incomplete: Max output tokens (${this.config.maxOutputTokens}) reached.`
+            )
+          );
+          if (!responseContent) {
+            this.log(
+              chalk.yellow(
+                "  ⚠️ Ran out of tokens during reasoning phase (no visible output)."
+              )
+            );
+          }
+        }
+      } else {
+        // --- Use Chat Completions API for gpt models ---
+        this.log(
+          chalk.dim(`  💬 Using Chat Completions API for model: ${modelName}`)
+        );
+        console.log(
+          chalk.magenta(
+            `[DEBUG] Value of this.config.maxOutputTokens inside callOpenAI: ${this.config.maxOutputTokens}`
+          )
+        ); // DEBUG LOG
+        const completion = await openai.chat.completions.create({
+          model: modelName,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: this.config.maxOutputTokens, // Use the new config option here too
+        });
+
+        responseContent = completion.choices[0].message.content || "";
+        inputTokens = completion.usage?.prompt_tokens || 0;
+        outputTokens = completion.usage?.completion_tokens || 0;
+      }
+      // ------------------------------------------------------
+
+      // Update token counts and cost
+      this.totalInputTokens += inputTokens;
+      this.totalOutputTokens += outputTokens;
+      this.updateCost(modelName, inputTokens, outputTokens);
 
       // Add the response to the conversation (only for main conversation)
-      const responseContent = completion.choices[0].message.content || "";
       if (!isExternalReview) {
         this.conversation.push({
           role: "assistant",
@@ -1279,17 +1525,61 @@ Please be candid but fair in your assessment.`,
     }
   }
 
-  // Helper method to save the final translation
-  private saveTranslation(translation: string): void {
-    const outputPath = path.join(
-      this.config.outputDir,
-      "final_translation.txt"
-    );
-    fs.writeFileSync(outputPath, translation);
-    this.outputFiles["Final Translation"] = outputPath;
+  // Helper method to update estimated cost
+  private updateCost(
+    model: string,
+    inputTokens: number,
+    outputTokens: number
+  ): void {
+    // Attempt to find exact match first, then base model
+    let pricing = pricingData.get(model);
+    if (!pricing) {
+      // Try matching base model name (e.g., gpt-4o, claude-3-7-sonnet)
+      const baseModelMatch = model.match(
+        /^(gpt-4o|gpt-4o-mini|o1|o3-mini|claude-3-opus|claude-3-sonnet|claude-3-haiku|claude-3-5-sonnet|claude-3-7-sonnet)/
+      );
+      const baseModel = baseModelMatch ? baseModelMatch[0] : model; // Use matched base or original if no match
+      if (baseModel !== model) {
+        pricing = pricingData.get(baseModel);
+      }
+      // Special handling for claude-3-7-sonnet-latest if not found directly
+      if (!pricing && model.includes("claude-3-7-sonnet")) {
+        pricing = pricingData.get("claude-3-7-sonnet-latest");
+      }
+    }
 
-    this.log(chalk.green(`📝 Final translation saved to ${outputPath}`));
+    if (pricing) {
+      const inputCost = (inputTokens / 1_000_000) * pricing.inputCostPerMillion;
+      const outputCost =
+        (outputTokens / 1_000_000) * pricing.outputCostPerMillion;
+      const callCost = inputCost + outputCost; // Reasoning tokens are billed as output tokens for o-series/Claude thinking
+      this.estimatedCost += callCost;
+      if (this.config.verbose) {
+        this.log(
+          chalk.dim(
+            `  💲 Cost for this call ($${callCost.toFixed(
+              5
+            )}): Input $${inputCost.toFixed(
+              5
+            )} (${inputTokens} tokens) + Output $${outputCost.toFixed(
+              5
+            )} (${outputTokens} tokens)`
+          )
+        );
+      }
+    } else {
+      if (this.config.verbose) {
+        this.log(
+          chalk.yellow(
+            `  ⚠️ No pricing data found for model: ${model}. Cost calculation skipped for this call.`
+          )
+        );
+      }
+    }
   }
+
+  // No longer needed - final save handled in execute() and saveLatestTranslationOnError()
+  // private saveTranslation(translation: string): void { ... }
 
   // Helper method to save the translation metrics
   private saveTranslationMetrics(): void {
@@ -1302,14 +1592,13 @@ Please be candid but fair in your assessment.`,
       metricsObject[key] = value;
     });
 
-    const metricsPath = path.join(
-      this.config.outputDir,
-      "translation_metrics.json"
-    );
-    fs.writeFileSync(metricsPath, JSON.stringify(metricsObject, null, 2));
-    this.outputFiles["Translation Metrics"] = metricsPath;
+    // Save to intermediates directory
+    fs.writeFileSync(this.metricsPath, JSON.stringify(metricsObject, null, 2));
+    this.outputFiles["Translation Metrics"] = this.metricsPath;
 
-    this.log(chalk.green(`📊 Translation metrics saved to ${metricsPath}`));
+    this.log(
+      chalk.green(`📊 Translation metrics saved to ${this.metricsPath}`)
+    );
   }
 
   // Helper method to save the conversation history
@@ -1322,10 +1611,14 @@ Please be candid but fair in your assessment.`,
           label: label,
           step: this.stepCounter,
           totalTokens: this.totalTokens,
+          totalInputTokens: this.totalInputTokens,
+          totalOutputTokens: this.totalOutputTokens,
+          estimatedCost: this.estimatedCost,
         },
         conversation: this.conversation,
       };
 
+      // Save to intermediates directory
       fs.writeFileSync(
         this.conversationJsonPath,
         JSON.stringify(conversationWithMetadata, null, 2)
@@ -1338,7 +1631,12 @@ Please be candid but fair in your assessment.`,
       readableHistory += `Last update: ${new Date().toISOString()}\n`;
       readableHistory += `Label: ${label}\n`;
       readableHistory += `Step: ${this.stepCounter}\n`;
-      readableHistory += `Total tokens used: ${this.totalTokens.toLocaleString()}\n\n`;
+      readableHistory += `Total tokens used: ${this.totalTokens.toLocaleString()}\n`;
+      readableHistory += `Input tokens: ${this.totalInputTokens.toLocaleString()}\n`;
+      readableHistory += `Output tokens: ${this.totalOutputTokens.toLocaleString()}\n`;
+      readableHistory += `Estimated total cost: $${this.estimatedCost.toFixed(
+        4
+      )}\n\n`;
       readableHistory += `${"=".repeat(80)}\n\n`;
 
       this.conversation.forEach((message, index) => {
@@ -1348,6 +1646,7 @@ Please be candid but fair in your assessment.`,
         }`;
       });
 
+      // Save to intermediates directory
       fs.writeFileSync(this.conversationTextPath, readableHistory);
       this.outputFiles["Conversation History (Text)"] =
         this.conversationTextPath;
@@ -1361,6 +1660,54 @@ Please be candid but fair in your assessment.`,
         error
       );
       // Non-fatal error - continue with the translation process
+    }
+  }
+
+  // Saves the latest available translation file to the final output path on error
+  public saveLatestTranslationOnError(): void {
+    const translationFileOrder = [
+      "13_refined_final_translation.txt",
+      "11_final_translation.txt",
+      "09_further_improved_translation.txt",
+      "07_improved_translation.txt",
+      "05_first_translation.txt",
+    ];
+
+    let latestFileFound: string | null = null;
+
+    for (const filename of translationFileOrder) {
+      const potentialPath = path.join(this.config.outputDir, filename);
+      if (fs.existsSync(potentialPath)) {
+        latestFileFound = potentialPath;
+        break; // Found the latest one
+      }
+    }
+
+    if (latestFileFound) {
+      try {
+        const content = fs.readFileSync(latestFileFound, "utf-8");
+        fs.writeFileSync(this.finalOutputPath, content);
+        console.log(
+          chalk.yellow(
+            `⚠️ Process interrupted. Saved latest available translation (${path.basename(
+              latestFileFound
+            )}) to: ${this.finalOutputPath}`
+          )
+        );
+      } catch (saveError) {
+        console.error(
+          chalk.red(
+            `❌ Failed to save latest translation on error from ${latestFileFound} to ${this.finalOutputPath}:`
+          ),
+          saveError
+        );
+      }
+    } else {
+      console.log(
+        chalk.yellow(
+          `⚠️ Process interrupted. No intermediate translation files found to save.`
+        )
+      );
     }
   }
 
@@ -1391,10 +1738,13 @@ Please be candid but fair in your assessment.`,
       ? this.config.sourceLanguage
       : this.config.targetLanguage;
 
+    // If source language isn't specified for source text, default to generic word counting
+    const effectiveLanguage = language?.toLowerCase() || "unknown";
+
     if (
-      language.toLowerCase() === "korean" ||
-      language.toLowerCase() === "japanese" ||
-      language.toLowerCase() === "chinese"
+      effectiveLanguage === "korean" ||
+      effectiveLanguage === "japanese" ||
+      effectiveLanguage === "chinese"
     ) {
       // For character-based languages, estimate based on characters
       wordCount = Math.round(charCount / 2); // Very rough approximation
@@ -1410,10 +1760,10 @@ Please be candid but fair in your assessment.`,
     // If calculating for source text, source and target are the same
     const sourceW = isSourceText
       ? wordCount
-      : this.sourceMetrics?.sourceWordCount || 0;
+      : this.sourceMetrics?.sourceWordCount ?? 0;
     const sourceC = isSourceText
       ? charCount
-      : this.sourceMetrics?.sourceCharCount || 0;
+      : this.sourceMetrics?.sourceCharCount ?? 0;
 
     return {
       sourceWordCount: sourceW,
@@ -1428,6 +1778,11 @@ Please be candid but fair in your assessment.`,
   // Display metrics for source text
   private displaySourceMetrics(): void {
     this.log(chalk.cyan(`📏 Source text metrics:`));
+    if (this.config.sourceLanguage) {
+      this.log(chalk.cyan(`   Language: ${this.config.sourceLanguage}`));
+    } else {
+      this.log(chalk.cyan(`   Language: (Auto-detected/Not specified)`));
+    }
     this.log(
       chalk.cyan(
         `   Word count: ${this.sourceMetrics.sourceWordCount.toLocaleString()}`
@@ -1541,12 +1896,12 @@ Please be candid but fair in your assessment.`,
     this.log(chalk.cyan(`📈 Word count progression:`));
     this.log(
       chalk.cyan(
-        `   First draft:          ${firstTranslation.targetWordCount.toLocaleString()} words`
+        `   05 First draft:         ${firstTranslation.targetWordCount.toLocaleString()} words`
       )
     );
     this.log(
       chalk.cyan(
-        `   First improvement:    ${improvedTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
+        `   07 First improvement:   ${improvedTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
           firstTranslation.targetWordCount,
           improvedTranslation.targetWordCount
         )})`
@@ -1554,17 +1909,9 @@ Please be candid but fair in your assessment.`,
     );
     this.log(
       chalk.cyan(
-        `   Second improvement:   ${furtherImprovedTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
+        `   09 Second improvement:  ${furtherImprovedTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
           improvedTranslation.targetWordCount,
           furtherImprovedTranslation.targetWordCount
-        )})`
-      )
-    );
-    this.log(
-      chalk.cyan(
-        `   Final translation:    ${finalTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
-          furtherImprovedTranslation.targetWordCount,
-          finalTranslation.targetWordCount
         )})`
       )
     );
@@ -1572,9 +1919,9 @@ Please be candid but fair in your assessment.`,
     if (refinedFinalTranslation) {
       this.log(
         chalk.cyan(
-          `   Refined after review: ${refinedFinalTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
-            finalTranslation.targetWordCount,
-            refinedFinalTranslation.targetWordCount
+          `   11 Final translation:    ${finalTranslation.targetWordCount.toLocaleString()} words (${this.calculateChange(
+            furtherImprovedTranslation.targetWordCount,
+            finalTranslation.targetWordCount
           )})`
         )
       );
@@ -1706,9 +2053,12 @@ program
   .requiredOption("-i, --input <path>", "Path to the input file")
   .requiredOption(
     "-o, --output <directory>",
-    "Directory to save translation and analysis files"
+    "Directory to save final translation"
   )
-  .requiredOption("-s, --source <language>", "Source language")
+  .option(
+    "-s, --source <language>",
+    "Source language (optional, will be auto-detected if omitted)"
+  )
   .requiredOption("-t, --target <language>", "Target language")
   .option("-m, --model <n>", "OpenAI model name", "gpt-4o")
   .option("-v, --verbose", "Verbose output", true)
@@ -1723,7 +2073,57 @@ program
     "--instructions-file <path>",
     "Path to a file containing custom translation instructions"
   )
+  .option(
+    "--reasoning-effort <level>",
+    "Reasoning effort for o1/o3 models (low, medium, high)",
+    "medium"
+  )
+  .option(
+    "--max-output-tokens <number>",
+    "Maximum total tokens (output + reasoning) for API calls",
+    "30000"
+  )
   .action(async (options) => {
+    let workflow: TranslationWorkflow | null = null; // Define workflow here for access in catch
+
+    // --- Model-Specific Adjustments ---
+    let maxOutputTokens = parseInt(options.maxOutputTokens); // Get initial value
+    const modelLimit = 16384; // Specific limit for gpt-4.5-preview
+
+    if (options.model === "gpt-4.5-preview") {
+      const optionSource = program.getOptionValueSource("maxOutputTokens"); // Check if user provided the value
+
+      if (optionSource !== "user") {
+        // Check if the value is the default
+        // Default value is being used, check if it exceeds the model limit
+        if (maxOutputTokens > modelLimit) {
+          console.log(
+            chalk.yellow(
+              `⚠️ Model ${options.model} has a limit of ${modelLimit} output tokens. Automatically adjusting --max-output-tokens from default ${maxOutputTokens} to ${modelLimit}.`
+            )
+          );
+          maxOutputTokens = modelLimit; // Adjust to the model's limit
+        }
+      } else {
+        // User explicitly set the value, warn if it exceeds the limit
+        if (maxOutputTokens > modelLimit) {
+          console.warn(
+            chalk.red(
+              `❌ Explicit --max-output-tokens (${maxOutputTokens}) exceeds the limit (${modelLimit}) for model ${options.model}. This will likely cause an API error.`
+            )
+          );
+          // We respect the user's value but issue a strong warning
+        }
+      }
+    }
+    // --- End Model-Specific Adjustments ---
+
+    console.log(
+      chalk.magenta(
+        `[DEBUG] Value for maxOutputTokens before creating config: ${maxOutputTokens}`
+      )
+    ); // DEBUG LOG
+
     try {
       // Validate input file exists
       if (!fs.existsSync(options.input)) {
@@ -1733,8 +2133,12 @@ program
 
       // Read input file
       const sourceText = fs.readFileSync(options.input, "utf-8");
+      const inputPath = options.input;
+      const parsedPath = path.parse(inputPath);
+      const originalFilename = parsedPath.name;
+      const originalExtension = parsedPath.ext;
 
-      // Create output directory if it doesn't exist
+      // Create output directory if it doesn't exist (intermediates created in constructor)
       if (!fs.existsSync(options.output)) {
         fs.mkdirSync(options.output, { recursive: true });
       }
@@ -1754,7 +2158,7 @@ program
       if (process.env.ANTHROPIC_API_KEY) {
         console.log(
           chalk.green(
-            "✅ ANTHROPIC_API_KEY found - will use Claude 3.7 Sonnet for external review"
+            "✅ ANTHROPIC_API_KEY found - will use Claude 3.5 Sonnet for external review"
           )
         );
       } else {
@@ -1796,7 +2200,7 @@ program
       }
 
       console.log(chalk.cyan("🚀 Starting AI-powered translation workflow"));
-      console.log(chalk.cyan(`📂 Output will be saved to: ${options.output}`));
+      console.log(chalk.cyan(`📂 Output directory: ${options.output}`));
 
       // Create configuration
       const config: TranslationConfig = {
@@ -1810,13 +2214,22 @@ program
         retryDelay: parseInt(options.delay),
         skipExternalReview: options.skipExternalReview,
         customInstructions: customInstructions || undefined,
+        reasoningEffort: options.reasoningEffort,
+        maxOutputTokens: maxOutputTokens, // Use the potentially adjusted value
+        originalFilename,
+        originalExtension,
+        inputPath,
       };
 
       // Create and execute workflow
-      const workflow = new TranslationWorkflow(config);
+      workflow = new TranslationWorkflow(config);
       await workflow.execute();
     } catch (error) {
-      console.error(chalk.red("❌ Translation failed:"), error);
+      console.error(chalk.red("\n❌ Translation workflow failed:"), error);
+      // Attempt to save the latest available translation
+      if (workflow) {
+        workflow.saveLatestTranslationOnError();
+      }
       process.exit(1);
     }
   });
