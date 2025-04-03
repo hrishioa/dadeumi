@@ -131,7 +131,9 @@ Think deeply about cultural context, idiomatic expressions, and literary devices
 ${config.targetLanguage} speakers.
 
 Work through the translation step by step, maintaining the voice and essence of the original while making it
-feel naturally written in ${config.targetLanguage}.`,
+feel naturally written in ${config.targetLanguage}.
+
+Your output length is unlocked so you can do at least 10K tokens in the output.`,
     });
 
     // Save initial conversation with system prompt
@@ -168,13 +170,19 @@ feel naturally written in ${config.targetLanguage}.`,
       const firstTranslation = await this.firstTranslationAttempt();
 
       // Step 6: Self-critique and improvement (first iteration)
-      const improvedTranslation = await this.selfCritiqueAndRefinement();
+      const improvedTranslation = await this.selfCritiqueAndRefinement(
+        firstTranslation
+      );
 
       // Step 7: Further review and improvement (second iteration)
-      const furtherImprovedTranslation = await this.furtherRefinement();
+      const furtherImprovedTranslation = await this.furtherRefinement(
+        improvedTranslation
+      );
 
       // Step 8: Final translation with comprehensive review
-      const finalTranslation = await this.finalTranslation();
+      const finalTranslation = await this.finalTranslation(
+        furtherImprovedTranslation
+      );
 
       // Step 9: External review using Anthropic Claude 3.7 (if available) or another OpenAI call
       if (!this.config.skipExternalReview) {
@@ -446,6 +454,7 @@ Here's the original text again for reference:
 ${this.config.sourceText}
 
 Please apply all the insights we've discussed about tone, style, cultural adaptation, and voice.
+Please ensure the entire text is translated in this draft to facilitate review and usability.
 Remember to put your translation in <first_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
@@ -483,7 +492,9 @@ Remember to put your translation in <first_translation> tags.`;
   }
 
   // Step 6: Self-critique and first refinement
-  private async selfCritiqueAndRefinement(): Promise<string> {
+  private async selfCritiqueAndRefinement(
+    previousTranslation: string
+  ): Promise<string> {
     this.stepCounter++;
     this.translationSteps.push("Self-Critique & First Refinement");
     this.spinner.start(
@@ -504,10 +515,13 @@ Could you analyze aspects like:
 - Overall readability and naturalness in ${this.config.targetLanguage}
 
 After providing your critique, please offer an improved version of the translation that addresses
-the issues you identified. This kind of iterative improvement through critique is often how the
-best translations develop.
+the issues you identified. Providing the complete improved translation allows for easier comparison and usability.
 
-Please put your critique in <critique> tags and your improved translation in <improved_translation> tags.`;
+Here is the translation to critique and improve:
+
+${previousTranslation}
+
+Please put your critique in <critique> tags and your complete improved translation in <improved_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
     this.spinner.succeed(
@@ -564,7 +578,9 @@ Please put your critique in <critique> tags and your improved translation in <im
   }
 
   // Step 7: Further review and second refinement
-  private async furtherRefinement(): Promise<string> {
+  private async furtherRefinement(
+    previousTranslation: string
+  ): Promise<string> {
     this.stepCounter++;
     this.translationSteps.push("Second Refinement");
     this.spinner.start(
@@ -583,9 +599,13 @@ I find that each revision helps us discover new things and see the text from dif
 Your insights on what could still be enhanced would be invaluable.
 
 After your critique, please provide another refined version of the translation that incorporates
-these new insights and improvements.
+these new insights and improvements. Please provide the complete refined translation for review.
 
-Please put your second critique in <second_critique> tags and your further improved translation
+Here is the translation to critique and improve:
+
+${previousTranslation}
+
+Please put your second critique in <second_critique> tags and your complete further improved translation
 in <further_improved_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
@@ -652,7 +672,7 @@ in <further_improved_translation> tags.`;
   }
 
   // Step 8: Final translation with comprehensive review
-  private async finalTranslation(): Promise<string> {
+  private async finalTranslation(previousTranslation: string): Promise<string> {
     this.stepCounter++;
     this.translationSteps.push("Final Translation");
     this.spinner.start(
@@ -673,9 +693,13 @@ As a final step, I'd like you to provide:
 and refinements throughout this process.
 
 This final version should be something we can be proud of - a translation that's faithful to the original while
-also reading naturally and beautifully in ${this.config.targetLanguage}.
+also reading naturally and beautifully in ${this.config.targetLanguage}. Please provide the entire final translation.
 
-Please put your review in <review> tags and your final translation in <final_translation> tags.`;
+Here is the translation to review and finalize:
+
+${previousTranslation}
+
+Please put your review in <review> tags and your complete final translation in <final_translation> tags.`;
 
     const response = await this.callOpenAI(prompt);
     this.spinner.succeed(
@@ -876,7 +900,7 @@ Please format your response in <external_review> tags.`;
 ${externalReview}
 
 Based on this feedback, please create a final, refined version of the translation that addresses
-the points raised in the review. This will be our absolute final version.
+the points raised in the review. This will be our absolute final version. Please provide the complete translation.
 
 Here's the current translation for reference:
 
