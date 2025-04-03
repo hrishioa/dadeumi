@@ -101,8 +101,9 @@ class TranslationWorkflow {
       "conversation_history.txt"
     );
 
-    // Calculate source metrics
-    this.sourceMetrics = this.calculateMetrics(this.config.sourceText);
+    // Calculate source metrics using the updated calculateMetrics function
+    // Passing true here is correct, as we are calculating for the source text
+    this.sourceMetrics = this.calculateMetrics(this.config.sourceText, true);
 
     // Initialize conversation with system prompt
     this.conversation.push({
@@ -262,6 +263,7 @@ Remember to put your analysis in <analysis> tags.`;
     this.log(chalk.green("  ↪ Analysis saved to disk"));
 
     // Calculate and display metrics
+    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(analysis);
     this.translationMetrics.set("analysis", metrics);
     this.displayMetrics("Analysis", metrics);
@@ -314,6 +316,7 @@ in <expression_exploration> tags.`;
     this.log(chalk.green("  ↪ Expression exploration saved to disk"));
 
     // Calculate and display metrics
+    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(exploration);
     this.translationMetrics.set("exploration", metrics);
     this.displayMetrics("Expression Exploration", metrics);
@@ -366,6 +369,7 @@ Please share your thoughts in <cultural_discussion> tags.`;
     this.log(chalk.green("  ↪ Cultural adaptation discussion saved to disk"));
 
     // Calculate and display metrics
+    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(discussion);
     this.translationMetrics.set("cultural_discussion", metrics);
     this.displayMetrics("Cultural Discussion", metrics);
@@ -418,6 +422,7 @@ Please share your thoughts in <title_options> tags.`;
     this.log(chalk.green("  ↪ Title options and inspiration saved to disk"));
 
     // Calculate and display metrics
+    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(options);
     this.translationMetrics.set("title_options", metrics);
     this.displayMetrics("Title Options", metrics);
@@ -469,6 +474,7 @@ Remember to put your translation in <first_translation> tags.`;
     this.log(chalk.green("  ↪ First draft translation saved to disk"));
 
     // Calculate and display metrics
+    // Passing false (or omitting) here is correct for generated text
     const metrics = this.calculateMetrics(firstTranslation);
     this.translationMetrics.set("first_translation", metrics);
     this.displayMetrics("First Translation", metrics);
@@ -543,11 +549,13 @@ Please put your critique in <critique> tags and your improved translation in <im
     );
 
     // Calculate and display metrics for critique
+    // Passing false (or omitting) here is correct for generated text
     const critiqueMetrics = this.calculateMetrics(critique);
     this.translationMetrics.set("first_critique", critiqueMetrics);
     this.displayMetrics("First Critique", critiqueMetrics);
 
     // Calculate and display metrics for improved translation
+    // Passing false (or omitting) here is correct for generated text
     const improvedMetrics = this.calculateMetrics(improvedTranslation);
     this.translationMetrics.set("improved_translation", improvedMetrics);
     this.displayMetrics("Improved Translation", improvedMetrics);
@@ -624,11 +632,13 @@ in <further_improved_translation> tags.`;
     );
 
     // Calculate and display metrics for second critique
+    // Passing false (or omitting) here is correct for generated text
     const critiqueMetrics = this.calculateMetrics(critique);
     this.translationMetrics.set("second_critique", critiqueMetrics);
     this.displayMetrics("Second Critique", critiqueMetrics);
 
     // Calculate and display metrics for further improved translation
+    // Passing false (or omitting) here is correct for generated text
     const furtherImprovedMetrics = this.calculateMetrics(
       furtherImprovedTranslation
     );
@@ -707,11 +717,13 @@ Please put your review in <review> tags and your final translation in <final_tra
     );
 
     // Calculate and display metrics for review
+    // Passing false (or omitting) here is correct for generated text
     const reviewMetrics = this.calculateMetrics(review);
     this.translationMetrics.set("review", reviewMetrics);
     this.displayMetrics("Comprehensive Review", reviewMetrics);
 
     // Calculate and display metrics for final translation
+    // Passing false (or omitting) here is correct for generated text
     const finalMetrics = this.calculateMetrics(finalTranslation);
     this.translationMetrics.set("final_translation", finalMetrics);
     this.displayMetrics("Final Translation", finalMetrics);
@@ -738,8 +750,8 @@ Please put your review in <review> tags and your final translation in <final_tra
         );
 
         const response = await anthropic.beta.messages.create({
-          model: "claude-3-7-sonnet-20250219",
-          max_tokens: 4000,
+          model: "claude-3-7-sonnet-20240715",
+          max_tokens: 16000,
           temperature: 1,
           messages: [
             {
@@ -764,7 +776,17 @@ Please format your response in <external_review> tags.`,
           ],
         });
 
-        externalReview = response.content[0].text;
+        // Check the type of the first content block before accessing text
+        if (response.content[0]?.type === "text") {
+          externalReview = response.content[0].text;
+        } else {
+          console.warn(
+            chalk.yellow(
+              "⚠️ Anthropic response did not contain text in the expected format."
+            )
+          );
+          externalReview = ""; // Default to empty if unexpected format
+        }
 
         // Extract from tags if present
         const reviewMatch = externalReview.match(
@@ -815,19 +837,24 @@ Please format your response in <external_review> tags.`;
       this.log(chalk.green("  ↪ External review saved to disk"));
 
       // Calculate and display metrics for external review
+      // Passing false (or omitting) here is correct for generated text
       const reviewMetrics = this.calculateMetrics(externalReview);
       this.translationMetrics.set("external_review", reviewMetrics);
       this.displayMetrics("External Review", reviewMetrics);
 
       // Apply external feedback to get a refined final translation
       await this.applyExternalFeedback(finalTranslation, externalReview);
-    } catch (error) {
+    } catch (error: any) {
       this.spinner.warn(
         chalk.yellow(
-          `⚠️ External review failed: ${error}. Continuing without it.`
+          `⚠️ External review failed: ${
+            error?.message || error
+          }. Continuing without it.`
         )
       );
       this.log(chalk.yellow("  ↪ Skipping external review due to error"));
+      // Optionally log the full error for debugging
+      // console.error(chalk.red("Full external review error:"), error);
     }
   }
 
@@ -881,6 +908,7 @@ Please put your refined translation in <refined_final_translation> tags.`;
     this.log(chalk.green("  ↪ Refined final translation saved to disk"));
 
     // Calculate and display metrics for refined final translation
+    // Passing false (or omitting) here is correct for generated text
     const refinedFinalMetrics = this.calculateMetrics(refinedFinalTranslation);
     this.translationMetrics.set(
       "refined_final_translation",
@@ -896,12 +924,20 @@ Please put your refined translation in <refined_final_translation> tags.`;
     retryCount = 0,
     isExternalReview = false
   ): Promise<string> {
+    // Declare currentStepLabel here and initialize with a default value
+    let currentStepLabel: string = "Unknown Step (Error before assignment)";
+
     try {
       // Prepare a descriptive step name for logging
-      const currentStep =
+      // Ensure translationSteps is not empty before accessing the last element
+      const stepName =
         this.translationSteps.length > 0
           ? this.translationSteps[this.translationSteps.length - 1]
-          : `Step ${this.stepCounter}`;
+          : "Initial Step"; // Fallback label
+      // Assign value inside the try block
+      currentStepLabel = isExternalReview
+        ? `External Review (OpenAI)`
+        : `Step ${this.stepCounter} - ${stepName}`;
 
       // For external review, start a fresh conversation to avoid biases
       let messages: ConversationMessage[] = [];
@@ -928,9 +964,10 @@ Please be candid but fair in your assessment.`,
         messages = this.conversation;
       }
 
-      // Save conversation history before API call
+      // Save conversation history before API call (only for main conversation)
       if (!isExternalReview) {
-        this.saveConversationHistory(`${currentStep} - Before API Call`);
+        // Use the defined currentStepLabel
+        this.saveConversationHistory(currentStepLabel);
       }
 
       // Call OpenAI API
@@ -938,6 +975,7 @@ Please be candid but fair in your assessment.`,
         model: this.config.modelName,
         messages: messages,
         temperature: 0.7,
+        max_tokens: 8192, // Increased max_tokens from previous edit
       });
 
       // Update token count
@@ -951,8 +989,9 @@ Please be candid but fair in your assessment.`,
           content: responseContent,
         });
 
-        // Save conversation history after API call
-        this.saveConversationHistory(`${currentStep} - After API Call`);
+        // Save conversation history after API call (only for main conversation)
+        // Use the defined currentStepLabel
+        this.saveConversationHistory(currentStepLabel);
       }
 
       return responseContent;
@@ -962,11 +1001,16 @@ Please be candid but fair in your assessment.`,
           this.config.maxRetries + 1
         })`
       );
+      console.error(
+        chalk.red(`❌ Error during API call (Attempt ${retryCount + 1}):`),
+        error?.message || error
+      );
 
       // Save conversation history even on error (only for main conversation)
       if (!isExternalReview) {
+        // Use the defined currentStepLabel
         this.saveConversationHistory(
-          `API Call Error - Attempt ${retryCount + 1}`
+          `API Call Error - ${currentStepLabel} - Attempt ${retryCount + 1}`
         );
       }
 
@@ -1064,28 +1108,8 @@ Please be candid but fair in your assessment.`,
       this.outputFiles["Conversation History (Text)"] =
         this.conversationTextPath;
 
-      // Also save a timestamped version for history/versioning
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const historyDir = path.join(this.config.outputDir, "history");
-
-      if (!fs.existsSync(historyDir)) {
-        fs.mkdirSync(historyDir, { recursive: true });
-      }
-
-      const timestampedPath = path.join(
-        historyDir,
-        `conversation_${this.stepCounter
-          .toString()
-          .padStart(2, "0")}_${timestamp}.json`
-      );
-
-      fs.writeFileSync(
-        timestampedPath,
-        JSON.stringify(conversationWithMetadata, null, 2)
-      );
-
       if (this.config.verbose) {
-        this.log(chalk.dim(`  ↪ Conversation history updated: ${label}`));
+        this.log(chalk.dim(`  ↪ Conversation history updated (${label})`));
       }
     } catch (error) {
       console.error(
@@ -1097,7 +1121,10 @@ Please be candid but fair in your assessment.`,
   }
 
   // Calculate metrics for a piece of text
-  private calculateMetrics(text: string): TranslationMetrics {
+  private calculateMetrics(
+    text: string,
+    isSourceText: boolean = false
+  ): TranslationMetrics {
     // Handle null or empty texts
     if (!text) {
       return {
@@ -1116,11 +1143,14 @@ Please be candid but fair in your assessment.`,
     // Count words - this is a simple implementation
     // For languages like Chinese/Japanese, we'll need more sophisticated methods
     let wordCount = 0;
+    const language = isSourceText
+      ? this.config.sourceLanguage
+      : this.config.targetLanguage;
 
     if (
-      this.config.targetLanguage.toLowerCase() === "korean" ||
-      this.config.targetLanguage.toLowerCase() === "japanese" ||
-      this.config.targetLanguage.toLowerCase() === "chinese"
+      language.toLowerCase() === "korean" ||
+      language.toLowerCase() === "japanese" ||
+      language.toLowerCase() === "chinese"
     ) {
       // For character-based languages, estimate based on characters
       wordCount = Math.round(charCount / 2); // Very rough approximation
@@ -1133,18 +1163,20 @@ Please be candid but fair in your assessment.`,
     // Average reading speed is about 200-250 words per minute
     const readingTime = wordCount / 200;
 
+    // If calculating for source text, source and target are the same
+    const sourceW = isSourceText
+      ? wordCount
+      : this.sourceMetrics?.sourceWordCount || 0;
+    const sourceC = isSourceText
+      ? charCount
+      : this.sourceMetrics?.sourceCharCount || 0;
+
     return {
-      sourceWordCount: this.sourceMetrics
-        ? this.sourceMetrics.sourceWordCount
-        : 0,
+      sourceWordCount: sourceW,
       targetWordCount: wordCount,
-      sourceCharCount: this.sourceMetrics
-        ? this.sourceMetrics.sourceCharCount
-        : 0,
+      sourceCharCount: sourceC,
       targetCharCount: charCount,
-      ratio: this.sourceMetrics
-        ? wordCount / this.sourceMetrics.sourceWordCount
-        : 0,
+      ratio: sourceW > 0 ? wordCount / sourceW : 0, // Avoid division by zero
       estimatedReadingTime: readingTime,
     };
   }
@@ -1193,27 +1225,46 @@ Please be candid but fair in your assessment.`,
 
   // Display comparison with source text
   private displayComparisonWithSource(metrics: TranslationMetrics): void {
-    const wordCountRatio = (
-      (metrics.targetWordCount / this.sourceMetrics.sourceWordCount) *
-      100
-    ).toFixed(1);
-    const charCountRatio = (
-      (metrics.targetCharCount / this.sourceMetrics.sourceCharCount) *
-      100
-    ).toFixed(1);
+    // Check if source counts are valid
+    const validSource =
+      this.sourceMetrics &&
+      this.sourceMetrics.sourceWordCount > 0 &&
+      this.sourceMetrics.sourceCharCount > 0;
+
+    const wordCountRatio = validSource
+      ? (
+          (metrics.targetWordCount / this.sourceMetrics.sourceWordCount) *
+          100
+        ).toFixed(1)
+      : "N/A";
+    const charCountRatio = validSource
+      ? (
+          (metrics.targetCharCount / this.sourceMetrics.sourceCharCount) *
+          100
+        ).toFixed(1)
+      : "N/A";
 
     this.log(chalk.magenta(`📊 Comparison with source text:`));
     this.log(
-      chalk.magenta(`   Word count ratio: ${wordCountRatio}% of source`)
+      chalk.magenta(
+        `   Word count ratio: ${wordCountRatio}${
+          validSource ? "%" : ""
+        } of source`
+      )
     );
     this.log(
-      chalk.magenta(`   Character count ratio: ${charCountRatio}% of source`)
+      chalk.magenta(
+        `   Character count ratio: ${charCountRatio}${
+          validSource ? "%" : ""
+        } of source`
+      )
     );
 
     // Visualize the difference
-    const wordBar = this.createProgressBar(
-      metrics.targetWordCount / this.sourceMetrics.sourceWordCount
-    );
+    const ratioValue = validSource
+      ? metrics.targetWordCount / this.sourceMetrics.sourceWordCount
+      : 0;
+    const wordBar = this.createProgressBar(ratioValue, validSource);
     this.log(chalk.magenta(`   Word ratio: ${wordBar}`));
   }
 
@@ -1318,7 +1369,13 @@ Please be candid but fair in your assessment.`,
   }
 
   // Create a visual progress bar
-  private createProgressBar(ratio: number): string {
+  private createProgressBar(
+    ratio: number,
+    validSource: boolean = true
+  ): string {
+    if (!validSource) {
+      return chalk.gray("N/A (source metrics unavailable)");
+    }
     const width = 20;
     const filled = Math.round(ratio * width);
     const empty = width - filled;
@@ -1331,9 +1388,11 @@ Please be candid but fair in your assessment.`,
         "▓".repeat(width) +
         " " +
         chalk.yellow("+" + Math.round((ratio - 1) * 100) + "%");
-    } else {
+    } else if (ratio >= 0) {
       // Less than or equal to 100%
       bar = "▓".repeat(filled) + "░".repeat(empty);
+    } else {
+      bar = chalk.gray("Invalid ratio");
     }
 
     return bar;
@@ -1407,7 +1466,7 @@ program
   )
   .requiredOption("-s, --source <language>", "Source language")
   .requiredOption("-t, --target <language>", "Target language")
-  .option("-m, --model <n>", "OpenAI model name", "gpt-4-turbo-preview")
+  .option("-m, --model <n>", "OpenAI model name", "gpt-4o")
   .option("-v, --verbose", "Verbose output", true)
   .option("-r, --retries <number>", "Maximum number of API call retries", "3")
   .option("-d, --delay <ms>", "Delay between retries in milliseconds", "5000")
