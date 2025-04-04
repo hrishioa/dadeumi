@@ -35,6 +35,11 @@ export class AnthropicProvider implements AiProvider {
       throw new Error("Anthropic client not initialized");
     }
 
+    console.log(
+      "Anthropic Provider: Generating response with model:",
+      options.modelName
+    );
+
     // Format messages for Anthropic API
     const formattedMessages: Array<{
       role: "user" | "assistant";
@@ -48,6 +53,10 @@ export class AnthropicProvider implements AiProvider {
     if (messages[0]?.role === "system") {
       systemMessage = messages[0].content;
       startIndex = 1;
+      console.log(
+        "System message extracted:",
+        systemMessage.substring(0, 50) + "..."
+      );
     }
 
     // Format remaining messages
@@ -59,14 +68,18 @@ export class AnthropicProvider implements AiProvider {
       });
     }
 
+    console.log(
+      `Formatted ${formattedMessages.length} messages for Claude API`
+    );
+
     const startTime = performance.now();
 
     try {
-      // Use the standard messages.create method instead of beta
+      // Use the standard messages.create method
       const response = await this.client.messages.create({
         model: options.modelName || "claude-3-7-sonnet-latest",
         max_tokens: options.maxOutputTokens || 100000,
-        temperature: options.temperature || 1.0,
+        temperature: options.temperature || 0.7,
         system: systemMessage,
         messages: formattedMessages,
       });
@@ -82,6 +95,8 @@ export class AnthropicProvider implements AiProvider {
         content = response.content[0].text;
       }
 
+      console.log("Anthropic response received successfully");
+
       return {
         content,
         inputTokens: response.usage?.input_tokens || 0,
@@ -91,6 +106,17 @@ export class AnthropicProvider implements AiProvider {
       };
     } catch (error: any) {
       console.error("Anthropic API error:", error?.message || error);
+
+      // Log details of the request that failed
+      console.error("Request details:");
+      console.error(
+        "- Model:",
+        options.modelName || "claude-3-7-sonnet-latest"
+      );
+      console.error("- Max tokens:", options.maxOutputTokens || 100000);
+      console.error("- Temperature:", options.temperature || 0.7);
+      console.error("- System message present:", !!systemMessage);
+      console.error("- Number of messages:", formattedMessages.length);
 
       // Log more detailed error information to help with debugging
       if (error?.status) {

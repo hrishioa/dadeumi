@@ -96,7 +96,12 @@ export class AiService {
       "gpt-4.5-preview",
     ];
 
-    const supportedAnthropicModels = ["claude-3-7-sonnet-latest"];
+    const supportedAnthropicModels = [
+      "claude-3-7-sonnet-latest",
+      "claude-3-7-sonnet",
+      "claude-3-sonnet",
+      "claude-3-5-sonnet",
+    ];
 
     const isAnthropicModel =
       modelName.startsWith("claude") ||
@@ -105,6 +110,8 @@ export class AiService {
 
     // Validate model name
     if (isAnthropicModel) {
+      console.log(`Detected Anthropic model: ${modelName}`);
+
       // Check if it's one of our supported Claude models (or starts with one)
       const isSupported = supportedAnthropicModels.some(
         (model) => modelName === model || modelName.startsWith(model)
@@ -123,7 +130,20 @@ export class AiService {
           "Anthropic provider not available. Please set ANTHROPIC_API_KEY environment variable."
         );
       }
-      return this.anthropicProvider.generateResponse(messages, options);
+
+      try {
+        return await this.anthropicProvider.generateResponse(messages, options);
+      } catch (error: any) {
+        console.error("Error calling Anthropic API:", error);
+        console.error("Model used:", modelName);
+        console.error("Message count:", messages.length);
+        if (error.status) {
+          console.error(
+            `Status: ${error.status}, Type: ${error.error?.type || "unknown"}`
+          );
+        }
+        throw error;
+      }
     } else {
       // Check if it's one of our supported OpenAI models (or starts with one)
       const isSupported = supportedOpenAiModels.some(
