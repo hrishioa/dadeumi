@@ -1,5 +1,9 @@
 # Dadeumi
 
+<p align="center">
+  <img src="assets/banner.png" alt="Dadeumi - Korean textile-inspired AI translation" width="100%" />
+</p>
+
 <div align="center">
   <h3>AI-powered literary translation workflow</h3>
   <p>Inspired by the Korean method of iterative textile refinement</p>
