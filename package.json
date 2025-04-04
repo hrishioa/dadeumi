@@ -1,14 +1,60 @@
 {
+  "name": "daedumi",
+  "version": "0.1.0",
+  "description": "Daedumi - An AI-powered literary translation workflow inspired by the Korean method of iterative textile refinement",
+  "main": "dist/cli.js",
+  "bin": {
+    "daedumi": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli.ts --outdir ./dist --target node",
+    "start": "bun run ./src/cli.ts",
+    "dev": "bun --watch ./src/cli.ts",
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration",
+    "test:coverage": "bun test --coverage"
+  },
+  "keywords": [
+    "translation",
+    "ai",
+    "literary",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "nlp",
+    "language",
+    "daedumi",
+    "gpt-4",
+    "claude-3",
+    "korean"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/username/daedumi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/username/daedumi/issues"
+  },
+  "homepage": "https://github.com/username/daedumi",
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@types/node": "^22.14.0",
-    "chalk": "^5.4.1",
-    "commander": "^13.1.0",
-    "dotenv": "^16.4.7",
-    "fast-xml-parser": "^5.1.0",
-    "fs": "^0.0.1-security",
-    "openai": "^4.91.1",
-    "ora": "^8.2.0",
-    "path": "^0.12.7"
+    "@anthropic-ai/sdk": "^0.18.0",
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "fast-xml-parser": "^4.3.5",
+    "openai": "^4.32.0",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.5",
+    "bun-types": "latest",
+    "typescript": "^5.4.5"
   }
 }
