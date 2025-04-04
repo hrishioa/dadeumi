@@ -297,8 +297,7 @@ export class TranslationWorkflow {
 
     try {
       // Step 1: Initial Analysis
-      if (this.stepCounter <= 0) {
-        this.stepCounter = 1;
+      if (this.stepCounter < 1) {
         this.startSpinnerWithTimer("Step 1/10: Analyzing source text");
 
         const initialAnalysisPrompt = prompts.initialAnalysis(
@@ -327,11 +326,15 @@ export class TranslationWorkflow {
         this.translationSteps.push("Initial Analysis");
         this.succeedSpinner("✅ Initial analysis completed");
         this.logger.success("Initial analysis saved to intermediates");
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 1;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 1: Initial Analysis");
       }
 
       // Step 2: Expression Exploration
-      if (this.stepCounter <= 1) {
-        this.stepCounter = 2;
+      if (this.stepCounter < 2) {
         this.startSpinnerWithTimer(
           "Step 2/10: Exploring expressions in target language"
         );
@@ -361,11 +364,17 @@ export class TranslationWorkflow {
         this.translationSteps.push("Expression Exploration");
         this.succeedSpinner("✅ Expression exploration completed");
         this.logger.success("Expression exploration saved to intermediates");
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 2;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory(
+          "Completed Step 2: Expression Exploration"
+        );
       }
 
       // Step 3: Cultural Adaptation
-      if (this.stepCounter <= 2) {
-        this.stepCounter = 3;
+      if (this.stepCounter < 3) {
         this.startSpinnerWithTimer("Step 3/10: Discussing cultural adaptation");
 
         const culturalAdaptationPrompt = prompts.toneAndCulturalDiscussion(
@@ -395,11 +404,15 @@ export class TranslationWorkflow {
         this.logger.success(
           "Cultural adaptation discussion saved to intermediates"
         );
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 3;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 3: Cultural Adaptation");
       }
 
       // Step 4: Title & Inspiration Exploration
-      if (this.stepCounter <= 3) {
-        this.stepCounter = 4;
+      if (this.stepCounter < 4) {
         this.startSpinnerWithTimer("Step 4/10: Exploring title & inspiration");
 
         const titleInspirationPrompt = prompts.titleAndInspirationExploration(
@@ -427,11 +440,15 @@ export class TranslationWorkflow {
         this.logger.success(
           "Title & inspiration exploration saved to intermediates"
         );
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 4;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 4: Title & Inspiration");
       }
 
       // Step 5: First Translation
-      if (this.stepCounter <= 4) {
-        this.stepCounter = 5;
+      if (this.stepCounter < 5) {
         this.startSpinnerWithTimer(
           "Step 5/10: Creating first translation draft"
         );
@@ -474,11 +491,15 @@ export class TranslationWorkflow {
 
         // First translation step - add the outputFiles entry
         this.outputFiles["05 First Translation"] = translationPath;
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 5;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 5: First Translation");
       }
 
       // Step 6: Self-critique & First Refinement
-      if (this.stepCounter <= 5) {
-        this.stepCounter = 6;
+      if (this.stepCounter < 6) {
         this.startSpinnerWithTimer(
           "Step 6/10: Self-critique & first refinement"
         );
@@ -528,11 +549,17 @@ export class TranslationWorkflow {
 
         // Improved translation step - add the outputFiles entry
         this.outputFiles["07 Improved Translation"] = improvedPath;
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 6;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory(
+          "Completed Step 6: Self-critique & First Refinement"
+        );
       }
 
       // Step 7: Second Refinement
-      if (this.stepCounter <= 6) {
-        this.stepCounter = 7;
+      if (this.stepCounter < 7) {
         this.startSpinnerWithTimer("Step 7/10: Second refinement");
 
         // Get the previous translation content
@@ -586,11 +613,15 @@ export class TranslationWorkflow {
         // Further improved translation step - add the outputFiles entry
         this.outputFiles["09 Further Improved Translation"] =
           furtherImprovedPath;
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 7;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 7: Second Refinement");
       }
 
       // Step 8: Final Translation
-      if (this.stepCounter <= 7) {
-        this.stepCounter = 8;
+      if (this.stepCounter < 8) {
         this.startSpinnerWithTimer("Step 8/10: Creating final translation");
 
         // Get the previous translation content
@@ -688,12 +719,16 @@ export class TranslationWorkflow {
 
         // Final translation step - add the outputFiles entry
         this.outputFiles["11 Final Translation"] = finalPath;
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 8;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 8: Final Translation");
       }
 
       // Step 9: External Review (optional)
       let externalReviewContent = "";
-      if (!this.config.skipExternalReview && this.stepCounter <= 8) {
-        this.stepCounter = 9;
+      if (!this.config.skipExternalReview && this.stepCounter < 9) {
         this.startSpinnerWithTimer("Step 9/10: Conducting external review");
 
         // Get the final translation content
@@ -733,14 +768,18 @@ export class TranslationWorkflow {
         this.translationSteps.push("External Review");
         this.succeedSpinner("✅ External review completed");
         this.logger.success("External review saved to intermediates");
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 9;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 9: External Review");
       }
 
       // Step 10: Final Refinement
       if (
-        (!this.config.skipExternalReview && this.stepCounter <= 9) ||
-        (this.config.skipExternalReview && this.stepCounter <= 8)
+        (!this.config.skipExternalReview && this.stepCounter < 10) ||
+        (this.config.skipExternalReview && this.stepCounter < 9)
       ) {
-        this.stepCounter = 10;
         this.startSpinnerWithTimer("Step 10/10: Applying final refinements");
 
         // Get the final translation content
@@ -858,6 +897,11 @@ export class TranslationWorkflow {
 
         // Save the final output
         saveText(this.finalOutputPath, refinedFinalTranslation);
+
+        // Update step counter AFTER completing the step
+        this.stepCounter = 10;
+        // Save conversation history with updated step counter
+        this.saveConversationHistory("Completed Step 10: Final Refinement");
       }
 
       // Save the final results
