@@ -34,6 +34,9 @@ Unlike conventional translation tools that focus on literal, one-pass translatio
 - **Resumable Sessions** - Can resume interrupted translation workflows
 - **Real-time Progress Tracking** - Shows elapsed time for each translation step
 - **Detailed Documentation** - Generated at each step to explain the translation choices
+- **Robust Continuation System** - Handles truncated responses and seamlessly continues long translations
+- **Interruption Recovery** - Safely resumes from the same step after Ctrl+C interruption
+- **Smart Context Management** - Optimizes token usage for each model's context window size
 
 ## Installation
 
@@ -116,6 +119,38 @@ Daedumi's translation process is modeled after the Korean "Daedumi" textile refi
 9. **External Review** (optional) - Gets feedback from a different AI model
 10. **Final Refinement** - Applies the external feedback for the polished result
 
+## Advanced Features
+
+### Smart Continuation System
+
+Daedumi features a sophisticated continuation handling system that:
+
+- Automatically detects truncated responses from the AI model
+- Efficiently resumes translation from the exact point where it left off
+- Combines partial translations seamlessly for a coherent result
+- Handles edge cases like XML tag truncation and "to be continued" markers
+- Prevents infinite loops by detecting minimal progress situations
+- Properly backs up intermediate results for resumability
+
+### Interruption Recovery
+
+If your translation is interrupted (by Ctrl+C or other means), Daedumi:
+
+- Saves the current state and all intermediate files
+- On restart, picks up exactly where it left off in the step sequence
+- Doesn't skip or repeat steps in the workflow
+- Preserves all previously generated content and translation metrics
+
+### Context Window Optimization
+
+Daedumi intelligently manages token usage to maximize the capabilities of different AI models:
+
+- Automatically detects the correct context window size for each model (e.g., 128K for GPT-4o, 200K for Claude)
+- Only trims conversation history when necessary (at 90% of window capacity)
+- Provides warnings at 70% usage to help anticipate potential issues
+- Preserves essential context even when trimming is required
+- Uses context efficiently for handling very long texts
+
 ## API
 
 ### `translate`
@@ -178,6 +213,14 @@ A: For high-quality translations, we recommend using GPT-4o or Claude 3.7 Sonnet
 **Q: Can I customize the translation style?**
 
 A: Yes, use the `--instructions` parameter or `customInstructions` option to specify tone, audience, formality level, or other stylistic preferences.
+
+**Q: How does Daedumi handle very long texts?**
+
+A: Daedumi includes a robust continuation system that detects when a translation is truncated and seamlessly continues it. The system intelligently manages conversation context to make optimal use of each model's token limits, allowing for translation of very long documents.
+
+**Q: What happens if my translation is interrupted?**
+
+A: Daedumi saves intermediate results at each step. If interrupted, simply run the same command again and it will resume from where it left off, without skipping or repeating steps.
 
 ## License
 
