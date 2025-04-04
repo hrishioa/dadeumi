@@ -50,6 +50,8 @@ export class TranslationWorkflow {
   private finalOutputPath: string;
   private aiService: AiService;
   private logger: Logger;
+  private spinnerStartTime: number = 0;
+  private spinnerInterval: NodeJS.Timeout | null = null;
 
   constructor(config: TranslationConfig) {
     this.config = config;
@@ -240,11 +242,12 @@ export class TranslationWorkflow {
     this.translationMetrics = new Map();
     this.outputFiles = {};
 
-    // Build system prompt
+    // Build initial system prompt with initial_analysis as the target step
     const systemPrompt = prompts.system(
       this.config.targetLanguage,
       this.config.sourceLanguage,
-      this.config.customInstructions
+      this.config.customInstructions,
+      "initial_analysis" // Start with the first step
     );
 
     // Add system prompt to conversation
@@ -283,7 +286,7 @@ export class TranslationWorkflow {
       // Step 1: Initial Analysis
       if (this.stepCounter <= 0) {
         this.stepCounter = 1;
-        this.spinner.start("Step 1/10: Analyzing source text");
+        this.startSpinnerWithTimer("Step 1/10: Analyzing source text");
 
         const initialAnalysisPrompt = prompts.initialAnalysis(
           this.config.sourceText,
@@ -309,14 +312,14 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Initial Analysis");
-        this.spinner.succeed("✅ Initial analysis completed");
+        this.succeedSpinner("✅ Initial analysis completed");
         this.logger.success("Initial analysis saved to intermediates");
       }
 
       // Step 2: Expression Exploration
       if (this.stepCounter <= 1) {
         this.stepCounter = 2;
-        this.spinner.start(
+        this.startSpinnerWithTimer(
           "Step 2/10: Exploring expressions in target language"
         );
 
@@ -343,14 +346,14 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Expression Exploration");
-        this.spinner.succeed("✅ Expression exploration completed");
+        this.succeedSpinner("✅ Expression exploration completed");
         this.logger.success("Expression exploration saved to intermediates");
       }
 
       // Step 3: Cultural Adaptation
       if (this.stepCounter <= 2) {
         this.stepCounter = 3;
-        this.spinner.start("Step 3/10: Discussing cultural adaptation");
+        this.startSpinnerWithTimer("Step 3/10: Discussing cultural adaptation");
 
         const culturalAdaptationPrompt = prompts.toneAndCulturalDiscussion(
           this.config.sourceText,
@@ -375,7 +378,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Cultural Adaptation Discussion");
-        this.spinner.succeed("✅ Cultural adaptation discussion completed");
+        this.succeedSpinner("✅ Cultural adaptation discussion completed");
         this.logger.success(
           "Cultural adaptation discussion saved to intermediates"
         );
@@ -384,7 +387,7 @@ export class TranslationWorkflow {
       // Step 4: Title & Inspiration Exploration
       if (this.stepCounter <= 3) {
         this.stepCounter = 4;
-        this.spinner.start("Step 4/10: Exploring title & inspiration");
+        this.startSpinnerWithTimer("Step 4/10: Exploring title & inspiration");
 
         const titleInspirationPrompt = prompts.titleAndInspirationExploration(
           this.config.sourceText,
@@ -407,7 +410,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Title & Inspiration Exploration");
-        this.spinner.succeed("✅ Title & inspiration exploration completed");
+        this.succeedSpinner("✅ Title & inspiration exploration completed");
         this.logger.success(
           "Title & inspiration exploration saved to intermediates"
         );
@@ -416,7 +419,9 @@ export class TranslationWorkflow {
       // Step 5: First Translation
       if (this.stepCounter <= 4) {
         this.stepCounter = 5;
-        this.spinner.start("Step 5/10: Creating first translation draft");
+        this.startSpinnerWithTimer(
+          "Step 5/10: Creating first translation draft"
+        );
 
         const firstTranslationPrompt = prompts.firstTranslationAttempt(
           this.config.sourceText,
@@ -454,14 +459,16 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("First Translation");
-        this.spinner.succeed("✅ First translation draft completed");
+        this.succeedSpinner("✅ First translation draft completed");
         this.logger.success("First translation draft saved to intermediates");
       }
 
       // Step 6: Self-critique & First Refinement
       if (this.stepCounter <= 5) {
         this.stepCounter = 6;
-        this.spinner.start("Step 6/10: Self-critique & first refinement");
+        this.startSpinnerWithTimer(
+          "Step 6/10: Self-critique & first refinement"
+        );
 
         // Get the previous translation content
         const prevTranslationPath = path.join(
@@ -506,14 +513,14 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Self-Critique & First Refinement");
-        this.spinner.succeed("✅ Self-critique & first refinement completed");
+        this.succeedSpinner("✅ Self-critique & first refinement completed");
         this.logger.success("Improved translation saved to intermediates");
       }
 
       // Step 7: Second Refinement
       if (this.stepCounter <= 6) {
         this.stepCounter = 7;
-        this.spinner.start("Step 7/10: Second refinement");
+        this.startSpinnerWithTimer("Step 7/10: Second refinement");
 
         // Get the previous translation content
         const prevTranslationPath = path.join(
@@ -561,7 +568,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Second Refinement");
-        this.spinner.succeed("✅ Second refinement completed");
+        this.succeedSpinner("✅ Second refinement completed");
         this.logger.success(
           "Further improved translation saved to intermediates"
         );
@@ -570,7 +577,7 @@ export class TranslationWorkflow {
       // Step 8: Final Translation
       if (this.stepCounter <= 7) {
         this.stepCounter = 8;
-        this.spinner.start("Step 8/10: Creating final translation");
+        this.startSpinnerWithTimer("Step 8/10: Creating final translation");
 
         // Get the previous translation content
         const prevTranslationPath = path.join(
@@ -615,7 +622,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Final Translation");
-        this.spinner.succeed("✅ Final translation completed");
+        this.succeedSpinner("✅ Final translation completed");
         this.logger.success("Final translation saved to intermediates");
       }
 
@@ -623,7 +630,7 @@ export class TranslationWorkflow {
       let externalReviewContent = "";
       if (!this.config.skipExternalReview && this.stepCounter <= 8) {
         this.stepCounter = 9;
-        this.spinner.start("Step 9/10: Conducting external review");
+        this.startSpinnerWithTimer("Step 9/10: Conducting external review");
 
         // Get the final translation content
         const finalTranslationPath = path.join(
@@ -660,7 +667,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("External Review");
-        this.spinner.succeed("✅ External review completed");
+        this.succeedSpinner("✅ External review completed");
         this.logger.success("External review saved to intermediates");
       }
 
@@ -670,7 +677,7 @@ export class TranslationWorkflow {
         (this.config.skipExternalReview && this.stepCounter <= 8)
       ) {
         this.stepCounter = 10;
-        this.spinner.start("Step 10/10: Applying final refinements");
+        this.startSpinnerWithTimer("Step 10/10: Applying final refinements");
 
         // Get the final translation content
         const finalTranslationPath = path.join(
@@ -723,7 +730,7 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Final Refinement");
-        this.spinner.succeed("✅ Final refinement completed");
+        this.succeedSpinner("✅ Final refinement completed");
         this.logger.success("Refined final translation saved to intermediates");
 
         // Save the final output
@@ -764,10 +771,10 @@ export class TranslationWorkflow {
       );
 
       // Make sure to stop the spinner when we're done
-      this.spinner.stop();
+      this.stopSpinner();
     } catch (error) {
       // Make sure to stop the spinner on error
-      this.spinner.stop();
+      this.stopSpinner();
 
       // Save whatever we have so far
       this.saveLatestTranslationOnError();
@@ -864,6 +871,7 @@ export class TranslationWorkflow {
     isExternalReview = false
   ): Promise<string> {
     let currentStepLabel: string = "Unknown Step";
+    let currentStepKey: string | undefined;
 
     try {
       // Prepare a descriptive step name for logging
@@ -875,6 +883,41 @@ export class TranslationWorkflow {
       currentStepLabel = isExternalReview
         ? `External Review`
         : `Step ${this.stepCounter} - ${stepName}`;
+
+      // Determine current step for system prompt
+      if (!isExternalReview) {
+        switch (this.stepCounter) {
+          case 1:
+            currentStepKey = "initial_analysis";
+            break;
+          case 2:
+            currentStepKey = "expression_exploration";
+            break;
+          case 3:
+            currentStepKey = "cultural_discussion";
+            break;
+          case 4:
+            currentStepKey = "title_options";
+            break;
+          case 5:
+            currentStepKey = "first_translation";
+            break;
+          case 6:
+            currentStepKey = "self_critique";
+            break;
+          case 7:
+            currentStepKey = "further_refinement";
+            break;
+          case 8:
+            currentStepKey = "final_translation";
+            break;
+          case 10:
+            currentStepKey = "apply_feedback";
+            break;
+        }
+      } else {
+        currentStepKey = "external_review";
+      }
 
       // For external review, start a fresh conversation to avoid biases
       let messages: ConversationMessage[] = [];
@@ -893,6 +936,28 @@ export class TranslationWorkflow {
           content: prompt,
         });
       } else {
+        // Set step-specific system prompt
+        const systemPrompt = prompts.system(
+          this.config.targetLanguage,
+          this.config.sourceLanguage,
+          this.config.customInstructions,
+          currentStepKey
+        );
+
+        // Replace the existing system message with an updated one
+        if (
+          this.conversation.length > 0 &&
+          this.conversation[0].role === "system"
+        ) {
+          this.conversation[0].content = systemPrompt;
+        } else {
+          // If there's no system message for some reason, add one
+          this.conversation.unshift({
+            role: "system",
+            content: systemPrompt,
+          });
+        }
+
         // Add the prompt to the main conversation
         this.conversation.push({
           role: "user",
@@ -957,7 +1022,7 @@ export class TranslationWorkflow {
 
       return response.content;
     } catch (error: any) {
-      this.spinner.fail(
+      this.failSpinner(
         `API call failed (attempt ${retryCount + 1}/${
           this.config.maxRetries + 1
         })`
@@ -984,12 +1049,12 @@ export class TranslationWorkflow {
           setTimeout(resolve, this.config.retryDelay)
         );
 
-        this.spinner.start("Retrying API call");
+        this.startSpinnerWithTimer("Retrying API call");
         return this.callAiService(prompt, retryCount + 1, isExternalReview);
       }
 
       // Make sure to stop the spinner when maximum retries are reached
-      this.spinner.stop();
+      this.stopSpinner();
       this.logger.error("❌ Error calling AI API after maximum retries");
       throw error;
     }
@@ -1180,5 +1245,61 @@ export class TranslationWorkflow {
         )
       );
     }
+  }
+
+  /**
+   * Start spinner with elapsed time tracking
+   */
+  private startSpinnerWithTimer(message: string): void {
+    // Clear any existing interval
+    this.clearSpinnerInterval();
+
+    // Start spinner with initial message
+    this.spinner.start(message);
+
+    // Record start time
+    this.spinnerStartTime = performance.now();
+
+    // Set up interval to update spinner text with elapsed time
+    this.spinnerInterval = setInterval(() => {
+      const elapsedSeconds = (performance.now() - this.spinnerStartTime) / 1000;
+      this.spinner.text = `${message} (${elapsedSeconds.toFixed(1)}s)`;
+    }, 100); // Update every 100ms for smooth display
+  }
+
+  /**
+   * Clear spinner interval
+   */
+  private clearSpinnerInterval(): void {
+    if (this.spinnerInterval) {
+      clearInterval(this.spinnerInterval);
+      this.spinnerInterval = null;
+    }
+  }
+
+  /**
+   * Stop spinner and clear interval
+   */
+  private stopSpinner(): void {
+    this.clearSpinnerInterval();
+    this.spinner.stop();
+  }
+
+  /**
+   * Succeed spinner and clear interval
+   */
+  private succeedSpinner(message: string): void {
+    this.clearSpinnerInterval();
+    const elapsedSeconds = (performance.now() - this.spinnerStartTime) / 1000;
+    this.spinner.succeed(`${message} (${elapsedSeconds.toFixed(1)}s)`);
+  }
+
+  /**
+   * Fail spinner and clear interval
+   */
+  private failSpinner(message: string): void {
+    this.clearSpinnerInterval();
+    const elapsedSeconds = (performance.now() - this.spinnerStartTime) / 1000;
+    this.spinner.fail(`${message} (${elapsedSeconds.toFixed(1)}s)`);
   }
 }

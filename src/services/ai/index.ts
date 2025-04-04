@@ -110,8 +110,6 @@ export class AiService {
 
     // Validate model name
     if (isAnthropicModel) {
-      console.log(`Detected Anthropic model: ${modelName}`);
-
       // Check if it's one of our supported Claude models (or starts with one)
       const isSupported = supportedAnthropicModels.some(
         (model) => modelName === model || modelName.startsWith(model)
@@ -130,20 +128,7 @@ export class AiService {
           "Anthropic provider not available. Please set ANTHROPIC_API_KEY environment variable."
         );
       }
-
-      try {
-        return await this.anthropicProvider.generateResponse(messages, options);
-      } catch (error: any) {
-        console.error("Error calling Anthropic API:", error);
-        console.error("Model used:", modelName);
-        console.error("Message count:", messages.length);
-        if (error.status) {
-          console.error(
-            `Status: ${error.status}, Type: ${error.error?.type || "unknown"}`
-          );
-        }
-        throw error;
-      }
+      return this.anthropicProvider.generateResponse(messages, options);
     } else {
       // Check if it's one of our supported OpenAI models (or starts with one)
       const isSupported = supportedOpenAiModels.some(

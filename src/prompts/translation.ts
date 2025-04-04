@@ -16,7 +16,8 @@ export const prompts = {
   system: (
     targetLanguage: string,
     sourceLanguage: string | undefined,
-    customInstructions?: string
+    customInstructions?: string,
+    currentStep?: string
   ): string => {
     let systemPrompt = `You are an expert literary translator with deep fluency in ${targetLanguage}${
       sourceLanguage ? ` and ${sourceLanguage}` : ""
@@ -27,9 +28,48 @@ staying faithful to the source text's meaning and intention${
       sourceLanguage
         ? ""
         : " (you may need to infer the source language from the text provided)"
-    }.
+    }.\n`;
 
-Always place your translations inside appropriate XML tags for easy extraction:
+    // Only include the relevant XML tags based on the current step
+    if (currentStep) {
+      systemPrompt += `For this step, place your response inside the following XML tag(s) for easy extraction:\n`;
+
+      switch (currentStep) {
+        case "initial_analysis":
+          systemPrompt += `- <analysis>your analysis here</analysis>\n`;
+          break;
+        case "expression_exploration":
+          systemPrompt += `- <expression_exploration>your exploration here</expression_exploration>\n`;
+          break;
+        case "cultural_discussion":
+          systemPrompt += `- <cultural_discussion>your discussion here</cultural_discussion>\n`;
+          break;
+        case "title_options":
+          systemPrompt += `- <title_options>your title suggestions here</title_options>\n`;
+          break;
+        case "first_translation":
+          systemPrompt += `- <first_translation>your translation here</first_translation>\n`;
+          break;
+        case "self_critique":
+          systemPrompt += `- <critique>your critique here</critique>\n`;
+          systemPrompt += `- <improved_translation>your improved translation here</improved_translation>\n`;
+          break;
+        case "further_refinement":
+          systemPrompt += `- <second_critique>your second critique here</second_critique>\n`;
+          systemPrompt += `- <further_improved_translation>your further improved translation here</further_improved_translation>\n`;
+          break;
+        case "final_translation":
+          systemPrompt += `- <final_translation>your final translation here</final_translation>\n`;
+          break;
+        case "external_review":
+          systemPrompt += `- <external_review>your external review here</external_review>\n`;
+          break;
+        case "apply_feedback":
+          systemPrompt += `- <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+          break;
+        default:
+          // If step is not recognized, include all tags as before
+          systemPrompt += `Always place your translations inside appropriate XML tags for easy extraction:
 - Initial analysis: <analysis>your analysis here</analysis>
 - Expression exploration: <expression_exploration>your exploration here</expression_exploration>
 - Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
@@ -42,9 +82,27 @@ Always place your translations inside appropriate XML tags for easy extraction:
 - Comprehensive review: <review>your comprehensive review here</review>
 - Final translation: <final_translation>your final translation here</final_translation>
 - External review: <external_review>your external review here</external_review>
-- Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>
+- Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+      }
+    } else {
+      // If no specific step is provided, include all tags as before
+      systemPrompt += `Always place your translations inside appropriate XML tags for easy extraction:
+- Initial analysis: <analysis>your analysis here</analysis>
+- Expression exploration: <expression_exploration>your exploration here</expression_exploration>
+- Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
+- Title options: <title_options>your title suggestions here</title_options>
+- First draft translation: <first_translation>your translation here</first_translation>
+- Critique: <critique>your critique here</critique>
+- Improved translation: <improved_translation>your improved translation here</improved_translation>
+- Second critique: <second_critique>your second critique here</second_critique>
+- Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
+- Comprehensive review: <review>your comprehensive review here</review>
+- Final translation: <final_translation>your final translation here</final_translation>
+- External review: <external_review>your external review here</external_review>
+- Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+    }
 
-Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
+    systemPrompt += `Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
 Think deeply about cultural context, idiomatic expressions, and literary devices that would resonate with native
 ${targetLanguage} speakers.
 
@@ -60,99 +118,120 @@ Your output length is unlocked so you can do at least 10K tokens in the output.`
   },
 
   initialAnalysis: ((
+    sourceText: string,
     targetLanguage: string,
-    sourceLanguage: string | undefined,
-    sourceText?: string
+    sourceLanguage?: string
   ): string => `I'd like your help translating a text into ${targetLanguage}${
     sourceLanguage ? ` from ${sourceLanguage}` : ""
   }.
 Before we start, could you analyze what we'll need to preserve in terms of tone, style, meaning, and cultural nuances?
 
-Here's the text:
+Here's the text to be translated:
 
+<source_text>
 ${sourceText}
+</source_text>
 
 Please analyze this text thoughtfully. What are the key elements that make this text distinctive? What tone, voice,
 argument structure, rhetorical devices, and cultural references should we be careful to preserve in translation?
 
+NOTE: Do not translate the text yet. This is just an analysis step to understand the text's distinctive elements.
+
 Remember to put your analysis in <analysis> tags.`) as PromptTemplate,
 
   expressionExploration: ((
-    targetLanguage: string,
-    sourceLanguage: string | undefined
-  ): string => `Now that we've analyzed the text, I'm curious about how we could express these elements in ${targetLanguage}${
-    sourceLanguage ? ` (considering it's from ${sourceLanguage})` : ""
-  }.
+    sourceText: string,
+    targetLanguage: string
+  ): string => `Now that we've analyzed the text, let's explore how we might express key elements in ${targetLanguage}.
 
-How might we capture the tone and style of the original in ${targetLanguage}? Are there particular expressions,
-idioms, or literary devices in ${targetLanguage} that could help convey the same feeling and impact?
+Here's the original text for reference:
 
-What about cultural references or metaphors? Could you suggest some ways to handle those elements that would resonate
-with ${targetLanguage} speakers while staying true to the original's intent?
+<source_text>
+${sourceText}
+</source_text>
 
-I'd love some specific examples or suggestions that we could use in our translation. Please include your thoughts
-in <expression_exploration> tags.`) as PromptTemplate,
+Could you identify 5-10 key phrases, idioms, cultural references, or stylistic elements from this text that might be challenging to translate?
+
+For each one, could you suggest how you might express it in ${targetLanguage} to preserve the intended meaning, tone, and effect?
+
+NOTE: This is not a full translation yet - we're just exploring key expressions to understand how to approach them.
+
+Please format your exploration within <expression_exploration> tags.`) as PromptTemplate,
 
   toneAndCulturalDiscussion: ((
-    targetLanguage: string,
-    sourceLanguage: string | undefined
-  ): string => `Let's discuss some specific aspects of our translation approach for translating into ${targetLanguage}${
-    sourceLanguage ? ` from ${sourceLanguage}` : ""
-  }:
-
-What do you think would be the most appropriate tone or level of honorifics to use in this ${targetLanguage} translation?
-I understand there might be cultural differences to consider. What would feel most natural and appropriate given the content and style of the original?
-
-Are there any cultural references or allegories in ${targetLanguage} that might help convey the essence of certain passages,
-even if they slightly modify the literal meaning? I'm fine with creative adaptation as long as the core message is preserved.
-
-How can we ensure the translation maintains a distinctive personal voice, rather than sounding generic?
-What would you say is unique about the original's voice, and how could we capture that in ${targetLanguage}?
-
-Please share your thoughts in <cultural_discussion> tags.`) as PromptTemplate,
-
-  titleAndInspirationExploration: ((
-    targetLanguage: string,
-    sourceLanguage: string | undefined
-  ): string => `Let's talk about a few more aspects before we start the actual translation into ${targetLanguage}${
-    sourceLanguage ? ` from ${sourceLanguage}` : ""
-  }:
-
-What might be a good way to translate the title into ${targetLanguage}? Could you suggest a few options
-that would capture the essence and appeal while being culturally appropriate?
-
-Are there any ${targetLanguage} writers or texts with a similar style or thematic focus that might
-serve as inspiration for our translation approach? I'd find it helpful to know if this reminds you of particular writers or works.
-
-What common pitfalls should we be careful to avoid when translating this type of content from ${sourceLanguage}
-to ${targetLanguage}? Any particular challenges or mistakes that translators often make?
-
-Please share your thoughts in <title_options> tags.`) as PromptTemplate,
-
-  firstTranslationAttempt: ((
-    targetLanguage: string,
-    sourceLanguage: string | undefined,
-    sourceText?: string
-  ): string => `I think we're ready to start translating! Based on our discussions so far, could you create
-a first draft translation of the text into ${targetLanguage}${
-    sourceLanguage ? ` (from the original ${sourceLanguage})` : ""
-  }?
+    sourceText: string,
+    targetLanguage: string
+  ): string => `Let's discuss the cultural adaptation aspects of this translation.
 
 Here's the original text again for reference:
 
+<source_text>
 ${sourceText}
+</source_text>
 
-Please apply all the insights we've discussed about tone, style, cultural adaptation, and voice.
-Please ensure the entire text is translated in this draft to facilitate review and usability.
-Remember to put your translation in <first_translation> tags.`) as PromptTemplate,
+What cultural adaptations might be necessary for ${targetLanguage} readers? Are there any references, analogies, or concepts
+that would need special consideration for the target audience?
+
+How should we handle the overall tone and voice to ensure it resonates with ${targetLanguage} readers while staying faithful
+to the original? Are there any cultural sensitivities to be aware of?
+
+Remember, we're still not translating the full text yet - just discussing how we'll approach cultural elements.
+
+Please put your discussion within <cultural_discussion> tags.`) as PromptTemplate,
+
+  titleAndInspirationExploration: ((
+    sourceText: string,
+    targetLanguage: string
+  ): string => `Let's now consider how to translate the title and any literary inspirations we might draw from to create a compelling translation.
+
+Here's the original text for reference:
+
+<source_text>
+${sourceText}
+</source_text>
+
+1. How should we translate the title to capture its essence in ${targetLanguage}? Please provide a few options with your reasoning.
+
+2. Are there any well-known ${targetLanguage} literary works, authors, or stylistic traditions that might provide inspiration for our approach?
+   How might these influences help us create a translation that feels natural and resonant to native speakers?
+
+Please share your thoughts within <title_options> tags.`) as PromptTemplate,
+
+  firstTranslationAttempt: ((
+    sourceText: string,
+    targetLanguage: string
+  ): string => `Now that we've analyzed the text and discussed key considerations, I'd like you to create a first draft translation into ${targetLanguage}.
+
+Here is the source text:
+
+<source_text>
+${sourceText}
+</source_text>
+
+Based on our previous discussions about tone, style, cultural nuances, and specific expressions, please translate the full text.
+Aim to preserve the original's meaning, impact, and feeling while making it sound natural in ${targetLanguage}.
+
+Please place your translation within <first_translation> tags.`) as PromptTemplate,
 
   selfCritiqueAndRefinement: ((
     targetLanguage: string,
     sourceLanguage: string | undefined,
-    sourceText?: string, // Not used, but keep signature consistent for simplicity
+    sourceText?: string,
     previousTranslation?: string
   ): string => `Now that we have our first draft, I'd love for you to review it critically.
 What do you think are the strengths and weaknesses of this translation?
+
+Here is the original text for reference:
+
+<source_text>
+${sourceText}
+</source_text>
+
+And here is the first draft translation:
+
+<previous_translation>
+${previousTranslation}
+</previous_translation>
 
 Could you analyze aspects like:
 - Sentence structure and flow
@@ -165,64 +244,73 @@ Could you analyze aspects like:
 After providing your critique, please offer an improved version of the translation that addresses
 the issues you identified. Providing the complete improved translation allows for easier comparison and usability.
 
-Here is the translation to critique and improve:
-
-${previousTranslation}
-
 Please put your critique in <critique> tags and your complete improved translation in <improved_translation> tags.`) as PromptTemplate,
 
   furtherRefinement: ((
     targetLanguage: string,
     sourceLanguage: string | undefined,
-    sourceText?: string, // Not used
+    sourceText?: string,
     previousTranslation?: string
-  ): string => `As you mentioned before, the best way to write is often through critique and rewrite.
-With fresh eyes, could you take another look at our current translation?
+  ): string => `Let's take a fresh look at our translation with new eyes.
 
-What aspects still need improvement? Are there places where the language could be more natural,
-the cultural adaptation more nuanced, or the translation more faithful to the original's spirit?
+Here is the original text:
 
-I find that each revision helps us discover new things and see the text from different angles.
-Your insights on what could still be enhanced would be invaluable.
+<source_text>
+${sourceText}
+</source_text>
 
-After your critique, please provide another refined version of the translation that incorporates
-these new insights and improvements. Please provide the complete refined translation for review.
+And here is our current translation:
 
-Here is the translation to critique and improve:
-
+<previous_translation>
 ${previousTranslation}
+</previous_translation>
 
-Please put your second critique in <second_critique> tags and your complete further improved translation
-in <further_improved_translation> tags.`) as PromptTemplate,
+I'd like you to review this translation again, but this time paying special attention to:
+
+1. Naturalness: Does it flow as if it were originally written in ${targetLanguage}?
+2. Fidelity: Does it capture the full meaning and nuance of the original?
+3. Impact: Does it have the same emotional and rhetorical effect as the original?
+4. Consistency: Are terms, tone, and style consistent throughout?
+5. Cultural resonance: Would it connect with native ${targetLanguage} speakers on a cultural level?
+
+After your critique, please provide a further improved version that addresses any issues you find.
+
+Please put your critique in <second_critique> tags and your improved translation in <further_improved_translation> tags.`) as PromptTemplate,
 
   finalTranslation: ((
     targetLanguage: string,
     sourceLanguage: string | undefined,
-    sourceText?: string, // Not used
+    sourceText?: string,
     previousTranslation?: string
-  ): string => `We've gone through several rounds of refinement, and I'm very happy with how the translation has evolved.
-As a final step, I'd like you to provide:
+  ): string => `Now it's time for our final comprehensive review and translation.
 
-1. A comprehensive review of the translation process, including:
-   - A thoughtful comparison between the original ${sourceLanguage} text and our ${targetLanguage} translation
-   - An analysis of the translation as a standalone piece of ${targetLanguage} writing
-   - Reflections on how well we preserved the key elements we identified at the beginning
+Here's the original text:
 
-2. A final, polished version of the translation that represents your best work, incorporating all our discussions
-and refinements throughout this process.
+<source_text>
+${sourceText}
+</source_text>
 
-This final version should be something we can be proud of - a translation that's faithful to the original while
-also reading naturally and beautifully in ${targetLanguage}. Please provide the entire final translation.
+And our current translation:
 
-Here is the translation to review and finalize:
-
+<previous_translation>
 ${previousTranslation}
+</previous_translation>
 
-Please put your review in <review> tags and your complete final translation in <final_translation> tags.`) as PromptTemplate,
+Let's do one final pass to perfect this translation. Consider all the aspects we've discussed:
+- Overall flow and readability
+- Accuracy and fidelity to the original
+- Cultural adaptation
+- Natural expression in ${targetLanguage}
+- Preservation of tone, style, and voice
+- Literary quality
 
-  externalReviewSystem: (
+After your review, please provide what you consider to be the final, polished translation.
+
+Please put your final translation in <final_translation> tags.`) as PromptTemplate,
+
+  externalReviewSystem: ((
     targetLanguage: string,
-    sourceLanguage: string | undefined
+    sourceLanguage?: string
   ): string => `You are an expert literary translator and critic with deep fluency in ${targetLanguage}${
     sourceLanguage ? ` and ${sourceLanguage}` : ""
   }.
@@ -230,43 +318,75 @@ Your task is to critically review a translation ${
     sourceLanguage ? `from ${sourceLanguage} ` : ""
   }to ${targetLanguage}, providing detailed,
 constructive feedback on how well it captures the essence, tone, and cultural nuances of the original text.
-Please be candid but fair in your assessment.`,
+Please be candid but fair in your assessment.`) as PromptTemplate,
 
   externalReviewUser: ((
     targetLanguage: string,
     sourceLanguage: string | undefined,
     sourceText?: string,
-    previousTranslation?: string // Renamed from finalTranslation for clarity
-  ): string => `<Original>
+    translation?: string
+  ): string => `I'd like you to provide an external review of a translation ${
+    sourceLanguage ? `from ${sourceLanguage} ` : ""
+  }to ${targetLanguage}.
+
+Here's the original text:
+
+<source_text>
 ${sourceText}
-</Original>
+</source_text>
 
-<Translation>
-${previousTranslation}
-</Translation>
+And here's the translation:
 
-Here is an original ${sourceLanguage} article and a ${targetLanguage} translation. Compare and critique the translation in terms of how well it captures the soul of the original and the dialectic, but also how it stands alone as a piece of writing. Provide actionable feedback, with possible inspiration from good ${targetLanguage} writers or pieces.
+<translated_text>
+${translation}
+</translated_text>
 
-Please format your response in <external_review> tags.`) as PromptTemplate,
+Could you critically evaluate how well this translation captures the essence, tone, and cultural nuances of the original?
+Please consider aspects like:
+- Accuracy and fidelity to the source
+- Natural flow and readability in ${targetLanguage}
+- Cultural adaptation and resonance
+- Preservation of literary devices, metaphors, and style
+- Overall effectiveness as a ${targetLanguage} text
+
+Please provide your detailed critique and suggestions for potential improvements.
+Remember that constructive criticism helps create better translations.
+
+Please format your review within <external_review> tags.`) as PromptTemplate,
 
   applyExternalFeedback: ((
-    targetLanguage: string, // Not used directly in template, but good for signature
-    sourceLanguage: string | undefined, // Not used
-    sourceText?: string, // Not used
-    previousTranslation?: string,
+    targetLanguage: string,
+    sourceLanguage: string | undefined,
+    sourceText?: string,
+    translation?: string,
     externalReview?: string
-  ): string => `We received an external review of our translation. Here it is:
+  ): string => `We've received an external review of our translation. Let's use this feedback to create our final refined version.
 
+Here's the original text:
+
+<source_text>
+${sourceText}
+</source_text>
+
+Our current translation:
+
+<current_translation>
+${translation}
+</current_translation>
+
+And the external review we received:
+
+<external_review>
 ${externalReview}
+</external_review>
 
-Based on this feedback, please create a final, refined version of the translation that addresses
-the points raised in the review. This will be our absolute final version. Please provide the complete translation.
+Based on this feedback, please create a refined final version of the translation that addresses the reviewer's points
+while maintaining the strengths of our current version.
 
-Here's the current translation for reference:
+Please apply your best judgment - incorporate suggestions that improve the translation, but feel free to respectfully
+disagree with points that you believe would not enhance the final result.
 
-${previousTranslation}
-
-Please put your refined translation in <refined_final_translation> tags.`) as PromptTemplate,
+Please provide your refined final translation within <refined_final_translation> tags.`) as PromptTemplate,
 };
 
 export type PromptKey = keyof typeof prompts;
