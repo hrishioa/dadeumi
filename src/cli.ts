@@ -55,10 +55,33 @@ program
     try {
       // --- Model-Specific Adjustments ---
       let maxOutputTokens = parseInt(options.maxOutputTokens);
-      const modelLimit = 16384; // Specific limit for some models like gpt-4.5-preview
 
-      // Adjust token limits based on model
-      if (options.model === "gpt-4.5-preview") {
+      // Define model-specific limits
+      const modelLimits: Record<string, number> = {
+        "gpt-4.5-preview": 16384,
+        "gpt-4o": 16384,
+        "gpt-4o-mini": 16384,
+        "claude-3-7-sonnet-latest": 128000,
+      };
+
+      // Check for limits by exact match or prefix
+      let modelLimit: number | undefined;
+
+      // Try exact match first
+      modelLimit = modelLimits[options.model];
+
+      // If no exact match, try prefix matching
+      if (!modelLimit) {
+        for (const [modelPrefix, limit] of Object.entries(modelLimits)) {
+          if (options.model.startsWith(modelPrefix)) {
+            modelLimit = limit;
+            break;
+          }
+        }
+      }
+
+      // Apply limit if found
+      if (modelLimit) {
         const optionSource = program.getOptionValueSource("maxOutputTokens");
 
         if (optionSource !== "user") {
