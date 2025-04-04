@@ -87,12 +87,37 @@ export class AiService {
   ): Promise<AiResponse> {
     const modelName = options.modelName;
 
-    // Determine which provider to use based on model name
-    if (
+    // Define supported models
+    const supportedOpenAiModels = [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "o1",
+      "o3-mini",
+      "gpt-4.5-preview",
+    ];
+
+    const supportedAnthropicModels = ["claude-3-7-sonnet-latest"];
+
+    const isAnthropicModel =
       modelName.startsWith("claude") ||
       modelName.includes("claude-") ||
-      modelName.includes("anthropic")
-    ) {
+      modelName.includes("anthropic");
+
+    // Validate model name
+    if (isAnthropicModel) {
+      // Check if it's one of our supported Claude models (or starts with one)
+      const isSupported = supportedAnthropicModels.some(
+        (model) => modelName === model || modelName.startsWith(model)
+      );
+
+      if (!isSupported) {
+        throw new Error(
+          `Unsupported Anthropic model: ${modelName}. Supported models are: ${supportedAnthropicModels.join(
+            ", "
+          )}.`
+        );
+      }
+
       if (!this.anthropicProvider.isAvailable()) {
         throw new Error(
           "Anthropic provider not available. Please set ANTHROPIC_API_KEY environment variable."
@@ -100,6 +125,19 @@ export class AiService {
       }
       return this.anthropicProvider.generateResponse(messages, options);
     } else {
+      // Check if it's one of our supported OpenAI models (or starts with one)
+      const isSupported = supportedOpenAiModels.some(
+        (model) => modelName === model || modelName.startsWith(model)
+      );
+
+      if (!isSupported) {
+        throw new Error(
+          `Unsupported OpenAI model: ${modelName}. Supported models are: ${supportedOpenAiModels.join(
+            ", "
+          )}.`
+        );
+      }
+
       if (!this.openAiProvider.isAvailable()) {
         throw new Error(
           "OpenAI provider not available. Please set OPENAI_API_KEY environment variable."

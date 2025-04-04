@@ -1,6 +1,6 @@
 {
   "name": "daedumi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Daedumi - An AI-powered literary translation workflow inspired by the Korean method of iterative textile refinement",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
