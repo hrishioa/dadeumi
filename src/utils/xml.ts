@@ -24,9 +24,10 @@ export class XmlProcessor {
    * Extract content from XML tags
    * @param text Text containing XML tags
    * @param tagName Name of the tag to extract (without angle brackets)
-   * @returns The content of the tag, or fallback to the original text if tag not found
+   * @returns The content of the tag, or empty string if tag not found
    */
   extractTagContent(text: string, tagName: string): string {
+    // First try with regular expression that matches complete tags
     const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
     const match = regex.exec(text);
 
@@ -34,8 +35,20 @@ export class XmlProcessor {
       return match[1].trim();
     }
 
-    // If tag not found, return the original text
-    return text;
+    // If no complete tag is found, check if there's just an opening tag (truncation case)
+    const openTagRegex = new RegExp(`<${tagName}>(.*)$`, "s");
+    const openTagMatch = openTagRegex.exec(text);
+
+    if (openTagMatch && openTagMatch[1]) {
+      console.warn(
+        `Warning: Found opening <${tagName}> tag but no closing tag. The response might be truncated.`
+      );
+      return openTagMatch[1].trim();
+    }
+
+    // If tag not found, return empty string
+    console.warn(`Warning: Tag <${tagName}> not found in the text.`);
+    return "";
   }
 
   /**

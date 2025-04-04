@@ -10,10 +10,10 @@ describe("XmlProcessor", () => {
     expect(result).toBe("important content");
   });
 
-  test("should return original text if tag not found", () => {
+  test("should return empty string if tag not found", () => {
     const text = `This text doesn't have the requested tag.`;
     const result = processor.extractTagContent(text, "nonexistent");
-    expect(result).toBe(text);
+    expect(result).toBe("");
   });
 
   test("should handle multiline content", () => {

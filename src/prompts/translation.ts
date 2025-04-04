@@ -69,6 +69,10 @@ CRITICAL: You must ALWAYS translate the COMPLETE text without omitting any conte
         case "apply_feedback":
           systemPrompt += `- <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
           break;
+        case "continue_translation":
+          systemPrompt += `- <continued_translation>your continuation of the translation here</continued_translation>\n`;
+          systemPrompt += `You are specifically tasked with continuing a translation that was cut off or incomplete. Follow the instructions carefully about where to continue from.\n`;
+          break;
         default:
           // If step is not recognized, include all tags as before
           systemPrompt += `Always place your translations inside appropriate XML tags for easy extraction:
@@ -84,7 +88,8 @@ CRITICAL: You must ALWAYS translate the COMPLETE text without omitting any conte
 - Comprehensive review: <review>your comprehensive review here</review>
 - Final translation: <final_translation>your COMPLETE final translation here</final_translation>
 - External review: <external_review>your external review here</external_review>
-- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
+- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>
+- Continuation: <continued_translation>your continuation of the translation here</continued_translation>\n`;
       }
     } else {
       // If no specific step is provided, include all tags as before
@@ -101,7 +106,8 @@ CRITICAL: You must ALWAYS translate the COMPLETE text without omitting any conte
 - Comprehensive review: <review>your comprehensive review here</review>
 - Final translation: <final_translation>your COMPLETE final translation here</final_translation>
 - External review: <external_review>your external review here</external_review>
-- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
+- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>
+- Continuation: <continued_translation>your continuation of the translation here</continued_translation>\n`;
     }
 
     systemPrompt += `Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
@@ -400,6 +406,28 @@ Please apply your best judgment - incorporate suggestions that improve the trans
 disagree with points that you believe would not enhance the final result.
 
 Please provide your refined final translation within <refined_final_translation> tags.`) as PromptTemplate,
+
+  continuationTranslation: ((
+    targetLanguage: string,
+    sourceLanguage: string | undefined,
+    sourceText?: string,
+    partialTranslation?: string,
+    continuationPoint?: string
+  ): string => `I need you to continue a translation that was cut off. The full source text and the partial translation are provided.
+
+<source_text>
+${sourceText}
+</source_text>
+
+<partial_translation>
+${partialTranslation}
+</partial_translation>
+
+This translation is incomplete. Please continue translating from the point where it cuts off.
+
+IMPORTANT: Focus on completing the translation from where it was interrupted. Your continuation should maintain the same style, tone, and formatting as the existing partial translation.
+
+Please put your continuation in <continued_translation> tags.`) as PromptTemplate,
 };
 
 export type PromptKey = keyof typeof prompts;

@@ -22,6 +22,12 @@ import {
   loadJson,
   loadText,
   calculateChange,
+  checkTranslationCompletion,
+  createContinuationPrompt,
+  backupPartialTranslation,
+  combineTranslation,
+  removeUnpairedXmlTags,
+  removeContinuationMarkers,
 } from "../utils";
 import { prompts } from "../prompts/translation";
 
@@ -52,6 +58,12 @@ export class TranslationWorkflow {
   private logger: Logger;
   private spinnerStartTime: number = 0;
   private spinnerInterval: NodeJS.Timeout | null = null;
+
+  // Track continuation progress to prevent infinite loops
+  private continuationAttempts = 0;
+  private previousTranslationLength = 0;
+  private minimumMeaningfulProgress = 100; // Require at least 100 chars of new content
+  private previousSourceLine = ""; // Track the previous source line we continued from
 
   constructor(config: TranslationConfig) {
     this.config = config;
@@ -431,18 +443,15 @@ export class TranslationWorkflow {
         const translationResponse = await this.callAiService(
           firstTranslationPrompt
         );
-        const translationContent = this.xmlProcessor.extractTagContent(
-          translationResponse,
-          "first_translation"
-        );
-
-        // Save first translation to file
         const translationPath = path.join(
           this.intermediatesDir,
           "05_first_translation.txt"
         );
-        saveText(translationPath, translationContent);
-        this.outputFiles["05 First Translation"] = translationPath;
+        const translationContent = await this.extractAndContinueTagContent(
+          translationResponse,
+          "first_translation",
+          translationPath
+        );
 
         // Update latest translation content
         latestTranslationContent = translationContent;
@@ -461,6 +470,9 @@ export class TranslationWorkflow {
         this.translationSteps.push("First Translation");
         this.succeedSpinner("✅ First translation draft completed");
         this.logger.success("First translation draft saved to intermediates");
+
+        // First translation step - add the outputFiles entry
+        this.outputFiles["05 First Translation"] = translationPath;
       }
 
       // Step 6: Self-critique & First Refinement
@@ -485,18 +497,15 @@ export class TranslationWorkflow {
         );
 
         const critiqueResponse = await this.callAiService(selfCritiquePrompt);
-        const improvedTranslation = this.xmlProcessor.extractTagContent(
-          critiqueResponse,
-          "improved_translation"
-        );
-
-        // Save improved translation to file
         const improvedPath = path.join(
           this.intermediatesDir,
           "07_improved_translation.txt"
         );
-        saveText(improvedPath, improvedTranslation);
-        this.outputFiles["07 Improved Translation"] = improvedPath;
+        const improvedTranslation = await this.extractAndContinueTagContent(
+          critiqueResponse,
+          "improved_translation",
+          improvedPath
+        );
 
         // Update latest translation content
         latestTranslationContent = improvedTranslation;
@@ -515,6 +524,9 @@ export class TranslationWorkflow {
         this.translationSteps.push("Self-Critique & First Refinement");
         this.succeedSpinner("✅ Self-critique & first refinement completed");
         this.logger.success("Improved translation saved to intermediates");
+
+        // Improved translation step - add the outputFiles entry
+        this.outputFiles["07 Improved Translation"] = improvedPath;
       }
 
       // Step 7: Second Refinement
@@ -539,19 +551,16 @@ export class TranslationWorkflow {
         const secondRefineResponse = await this.callAiService(
           secondRefinementPrompt
         );
-        const furtherImprovedTranslation = this.xmlProcessor.extractTagContent(
-          secondRefineResponse,
-          "further_improved_translation"
-        );
-
-        // Save further improved translation to file
         const furtherImprovedPath = path.join(
           this.intermediatesDir,
           "09_further_improved_translation.txt"
         );
-        saveText(furtherImprovedPath, furtherImprovedTranslation);
-        this.outputFiles["09 Further Improved Translation"] =
-          furtherImprovedPath;
+        const furtherImprovedTranslation =
+          await this.extractAndContinueTagContent(
+            secondRefineResponse,
+            "further_improved_translation",
+            furtherImprovedPath
+          );
 
         // Update latest translation content
         latestTranslationContent = furtherImprovedTranslation;
@@ -572,6 +581,10 @@ export class TranslationWorkflow {
         this.logger.success(
           "Further improved translation saved to intermediates"
         );
+
+        // Further improved translation step - add the outputFiles entry
+        this.outputFiles["09 Further Improved Translation"] =
+          furtherImprovedPath;
       }
 
       // Step 8: Final Translation
@@ -700,18 +713,15 @@ export class TranslationWorkflow {
         );
 
         const finalResponse = await this.callAiService(finalTranslationPrompt);
-        const finalTranslation = this.xmlProcessor.extractTagContent(
-          finalResponse,
-          "final_translation"
-        );
-
-        // Save final translation to file
         const finalPath = path.join(
           this.intermediatesDir,
           "11_final_translation.txt"
         );
-        saveText(finalPath, finalTranslation);
-        this.outputFiles["11 Final Translation"] = finalPath;
+        const finalTranslation = await this.extractAndContinueTagContent(
+          finalResponse,
+          "final_translation",
+          finalPath
+        );
 
         // Update latest translation content
         latestTranslationContent = finalTranslation;
@@ -730,6 +740,9 @@ export class TranslationWorkflow {
         this.translationSteps.push("Final Translation");
         this.succeedSpinner("✅ Final translation completed");
         this.logger.success("Final translation saved to intermediates");
+
+        // Final translation step - add the outputFiles entry
+        this.outputFiles["11 Final Translation"] = finalPath;
       }
 
       // Step 9: External Review (optional)
@@ -903,6 +916,12 @@ export class TranslationWorkflow {
         // Skip this step if external review was skipped
         let refinedFinalTranslation = finalTranslation;
 
+        // Define the refinedPath here (outside the if block)
+        const refinedPath = path.join(
+          this.intermediatesDir,
+          "13_refined_final_translation.txt"
+        );
+
         if (!this.config.skipExternalReview) {
           const finalRefinementPrompt = prompts.applyExternalFeedback(
             this.config.targetLanguage,
@@ -915,18 +934,19 @@ export class TranslationWorkflow {
           const refinedResponse = await this.callAiService(
             finalRefinementPrompt
           );
-          refinedFinalTranslation = this.xmlProcessor.extractTagContent(
+
+          // Get the refined translation with continuation check
+          refinedFinalTranslation = await this.extractAndContinueTagContent(
             refinedResponse,
-            "refined_final_translation"
+            "refined_final_translation",
+            refinedPath
           );
+        } else {
+          // If external review is skipped, just save the final translation as the refined one
+          saveText(refinedPath, refinedFinalTranslation);
         }
 
-        // Save refined final translation to file
-        const refinedPath = path.join(
-          this.intermediatesDir,
-          "13_refined_final_translation.txt"
-        );
-        saveText(refinedPath, refinedFinalTranslation);
+        // Add to output files dictionary
         this.outputFiles["13 Refined Final Translation"] = refinedPath;
 
         // Update latest translation content
@@ -1776,6 +1796,462 @@ export class TranslationWorkflow {
           100
         ).toFixed(1)}% of limit)`
       );
+    }
+  }
+
+  /**
+   * Handle translation continuation for potentially incomplete translations
+   * @param sourceText Original source text
+   * @param translationText Current translation (potentially incomplete)
+   * @param translationPath Path to save the translation
+   * @param tag XML tag name used in the translation
+   * @param forceCheck Force continuation regardless of completion check (for known truncation)
+   * @returns Completed translation or the original if no continuation needed
+   */
+  private async handleTranslationContinuation(
+    sourceText: string,
+    translationText: string,
+    translationPath: string,
+    tag: string,
+    forceCheck = false
+  ): Promise<string> {
+    // First check if the translation is complete (unless we're forcing continuation)
+    const completionCheck = await checkTranslationCompletion(
+      sourceText,
+      translationText,
+      this.config.verbose
+    );
+
+    if (!forceCheck && (!completionCheck || !completionCheck.continue)) {
+      // Translation is complete or check failed - return original
+      // Reset continuation tracking
+      this.continuationAttempts = 0;
+      this.previousTranslationLength = 0;
+      this.previousSourceLine = "";
+      return translationText;
+    }
+
+    // Check if we're making minimal progress
+    if (translationText.length === this.previousTranslationLength) {
+      this.continuationAttempts++;
+      // If we've tried 3 times with no change, break the loop
+      if (this.continuationAttempts >= 3) {
+        this.logger.warn(
+          `⚠️ Breaking continuation loop after ${this.continuationAttempts} attempts with no progress`
+        );
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+        return translationText;
+      }
+    } else if (
+      translationText.length - this.previousTranslationLength <
+        this.minimumMeaningfulProgress &&
+      this.previousTranslationLength > 0
+    ) {
+      // We're making very little progress (less than minimumMeaningfulProgress chars)
+      this.continuationAttempts++;
+      if (this.continuationAttempts >= 2) {
+        this.logger.warn(
+          `⚠️ Breaking continuation loop after ${
+            this.continuationAttempts
+          } attempts with minimal progress (only ${
+            translationText.length - this.previousTranslationLength
+          } chars added)`
+        );
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+        return translationText;
+      }
+    } else {
+      // Reset counter when making good progress
+      this.continuationAttempts = 0;
+    }
+
+    // Store current length for next comparison
+    this.previousTranslationLength = translationText.length;
+
+    // Determine if we need continuation
+    const needsContinuation =
+      forceCheck || (completionCheck && completionCheck.continue);
+    if (!needsContinuation) {
+      return translationText;
+    }
+
+    // We need to continue translation - log information
+    this.logger.warn(
+      `⚠️ Translation appears to be incomplete${
+        forceCheck ? " (forced check due to truncation)" : ""
+      }. Attempting to continue from identified point.`
+    );
+
+    // Create backup of partial translation
+    const backupPath = backupPartialTranslation(translationPath);
+    if (backupPath) {
+      this.logger.info(`📋 Backed up partial translation to: ${backupPath}`);
+    }
+
+    // For forced check with no completion data, use last paragraph as continuation point
+    let targetLastLine = "";
+    let sourceLine = "";
+
+    if (
+      forceCheck &&
+      (!completionCheck ||
+        !completionCheck.targetLastLine ||
+        !completionCheck.sourceLine)
+    ) {
+      // Find the last paragraph of the translated text
+      const paragraphs = translationText.split(/\n\n+/);
+      if (paragraphs.length > 0) {
+        targetLastLine = paragraphs[paragraphs.length - 1].trim();
+        this.logger.info(
+          `📝 Using last paragraph as continuation point for forced continuation`
+        );
+      } else {
+        targetLastLine = translationText.split("\n").pop() || "";
+        this.logger.info(
+          `📝 Using last line as continuation point for forced continuation`
+        );
+      }
+
+      // Use approximate source position - midpoint if we can't determine
+      const sourceLines = sourceText.split("\n");
+      const midpoint = Math.floor(sourceLines.length / 2);
+      sourceLine = sourceLines[midpoint] || "";
+    } else {
+      // Use the identified continuation points
+      targetLastLine = completionCheck?.targetLastLine || "";
+      sourceLine = completionCheck?.sourceLine || "";
+    }
+
+    // Check if we're trying to continue from the same source line as before
+    if (sourceLine && sourceLine === this.previousSourceLine) {
+      this.continuationAttempts++;
+
+      // If we've tried to continue from the same source line twice, assume we're at the end
+      if (this.continuationAttempts >= 2) {
+        this.logger.warn(
+          `⚠️ Breaking continuation loop: detected same source line "${sourceLine.substring(
+            0,
+            30
+          )}..." in consecutive attempts`
+        );
+        this.logger.info(
+          `📝 This likely means we've reached the end of the document or the model can't make further progress`
+        );
+
+        // Reset tracking variables
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+
+        return translationText;
+      }
+    } else {
+      // Different source line, reset attempt counter for this check
+      this.continuationAttempts = 0;
+    }
+
+    // Store current source line for next comparison
+    this.previousSourceLine = sourceLine;
+
+    // Generate continuation prompt
+    const continuationPrompt = createContinuationPrompt(
+      sourceText,
+      translationText,
+      targetLastLine,
+      sourceLine
+    );
+
+    // Update system prompt for continuation
+    const systemPrompt = prompts.system(
+      this.config.targetLanguage,
+      this.config.sourceLanguage,
+      this.config.customInstructions,
+      "continue_translation" // Custom step indicator
+    );
+
+    // Save current conversation state
+    const savedConversation = [...this.conversation];
+
+    // Use a fresh conversation for continuation to avoid token usage
+    this.conversation = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: continuationPrompt,
+      },
+    ];
+
+    // Get the continuation from the model
+    this.startSpinnerWithTimer("Continuing incomplete translation");
+
+    try {
+      const continuationResponse = await this.callAiService(continuationPrompt);
+
+      // Combine the partial translation with the continuation
+      const combinedTranslation = combineTranslation(
+        translationText,
+        continuationResponse,
+        targetLastLine
+      );
+
+      // Restore original conversation
+      this.conversation = savedConversation;
+
+      // Check if we successfully combined the translations
+      if (!combinedTranslation) {
+        this.logger.error(
+          "❌ Failed to combine partial translation with continuation"
+        );
+        // Reset counters on failure
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+        return translationText; // Return original on failure
+      }
+
+      // Always save the combined translation immediately after each successful continuation
+      saveText(translationPath, combinedTranslation);
+      this.logger.success(
+        `✅ Saved continued translation (${combinedTranslation.length} characters)`
+      );
+
+      // Check if the combined translation is complete
+      const secondCheck = await checkTranslationCompletion(
+        sourceText,
+        combinedTranslation,
+        this.config.verbose
+      );
+
+      if (secondCheck && secondCheck.continue) {
+        // Still incomplete - recursive call to continue further
+        this.logger.warn(
+          `⚠️ Translation still incomplete after continuation. Attempting another continuation.`
+        );
+
+        // Do NOT pass forceCheck in recursive calls - let the completion check determine if we need more
+        return this.handleTranslationContinuation(
+          sourceText,
+          combinedTranslation, // Pass the updated combined translation for the next continuation
+          translationPath,
+          tag,
+          false // Don't force on recursive calls
+        );
+      }
+
+      this.succeedSpinner(
+        "✅ Successfully continued and completed translation"
+      );
+      // Reset counters on successful completion
+      this.continuationAttempts = 0;
+      this.previousTranslationLength = 0;
+      this.previousSourceLine = "";
+      return combinedTranslation;
+    } catch (error) {
+      this.logger.error(`❌ Error during translation continuation: ${error}`);
+      this.failSpinner("❌ Failed to continue translation");
+
+      // Restore original conversation
+      this.conversation = savedConversation;
+
+      // Reset counters on error
+      this.continuationAttempts = 0;
+      this.previousTranslationLength = 0;
+      this.previousSourceLine = "";
+
+      return translationText; // Return original on failure
+    }
+  }
+
+  // Add this function to extract tag content with continuation check
+  private async extractAndContinueTagContent(
+    response: string,
+    tag: string,
+    outputPath: string
+  ): Promise<string> {
+    try {
+      // Check if there's an opening tag but no closing tag (truncation indicator)
+      const openTagRegex = new RegExp(`<${tag}>`, "s");
+      const closeTagRegex = new RegExp(`</${tag}>`, "s");
+      const hasOpenTag = openTagRegex.test(response);
+      const hasCloseTag = closeTagRegex.test(response);
+
+      if (hasOpenTag && !hasCloseTag) {
+        this.logger.warn(
+          `⚠️ Detected truncated response: Opening <${tag}> tag found but no closing tag. Response likely cut off.`
+        );
+      }
+
+      // Extract content using existing method (now improved to handle truncation)
+      const content = this.xmlProcessor.extractTagContent(response, tag);
+
+      // Check if content was successfully extracted
+      if (!content || content.trim().length === 0) {
+        this.logger.warn(
+          `⚠️ Warning: Could not extract content from <${tag}> tags. The response might be malformed.`
+        );
+
+        // Save the entire response to a debug file in case of extraction failure
+        const debugPath = path.join(
+          this.intermediatesDir,
+          `${tag}_extraction_debug.txt`
+        );
+        saveText(debugPath, response);
+
+        this.logger.info(
+          `📝 Saved full response to ${debugPath} for debugging.`
+        );
+
+        // Try to safely extract the content with a different approach if the tag is missing
+        let extractedContent = "";
+
+        // If this is a translation, try to find the actual translation content
+        if (tag.includes("translation")) {
+          // First check if there's an opening tag but no closing tag
+          if (hasOpenTag && !hasCloseTag) {
+            // Extract everything after the opening tag as our content
+            const openTagIndex = response.indexOf(`<${tag}>`);
+            if (openTagIndex !== -1) {
+              extractedContent = response
+                .substring(openTagIndex + tag.length + 2)
+                .trim();
+              this.logger.info(
+                `📝 Extracted content from truncated response starting with <${tag}> tag.`
+              );
+            }
+          }
+
+          // If still no content, try other extraction methods
+          if (!extractedContent) {
+            // Look for common patterns in the response that might indicate where the translation starts
+            const possibleStart = response.indexOf("```");
+            if (possibleStart !== -1) {
+              const possibleEnd = response.lastIndexOf("```");
+              if (possibleEnd > possibleStart && possibleEnd !== -1) {
+                extractedContent = response
+                  .substring(possibleStart + 3, possibleEnd)
+                  .trim();
+                this.logger.info(
+                  `📝 Attempted to extract translation using code block markers.`
+                );
+              } else {
+                // Try the entire response without the initial system message parts
+                extractedContent = response.trim();
+                this.logger.info(
+                  `📝 Using entire response as translation content.`
+                );
+              }
+            }
+          }
+        }
+
+        if (extractedContent) {
+          // Clean up any XML tags and continuation markers
+          extractedContent = this.cleanTranslationContent(extractedContent);
+
+          saveText(outputPath, extractedContent);
+          this.logger.info(`📝 Saved extracted content as fallback.`);
+
+          // Even for fallback content, check if continuation is needed
+          const needsContinuation = hasOpenTag && !hasCloseTag;
+          if (needsContinuation) {
+            this.logger.warn(
+              `⚠️ Fallback extraction from truncated response. Will attempt continuation.`
+            );
+
+            const continuedContent = await this.handleTranslationContinuation(
+              this.config.sourceText,
+              extractedContent,
+              outputPath,
+              tag,
+              true // Force continuation for fallback extraction from truncated response
+            );
+
+            return continuedContent;
+          }
+
+          return extractedContent;
+        }
+
+        // Return empty string if no content could be extracted
+        // This will be handled by the calling method
+        return "";
+      }
+
+      // Clean up the extracted content (remove any XML tags, continuation markers)
+      const cleanedContent = this.cleanTranslationContent(content);
+
+      // Save cleaned content to file
+      saveText(outputPath, cleanedContent);
+
+      // Log what we're doing
+      this.logger.info(
+        `📊 Extracted ${cleanedContent.length} characters for ${tag}. Checking if translation is complete...`
+      );
+
+      // If we detected truncation earlier, we definitely need continuation
+      const needsContinuation = hasOpenTag && !hasCloseTag;
+      if (needsContinuation) {
+        this.logger.warn(
+          `⚠️ Response was truncated. Will attempt continuation regardless of completion check result.`
+        );
+      }
+
+      // Check for continuation and handle if needed
+      const completedContent = await this.handleTranslationContinuation(
+        this.config.sourceText,
+        cleanedContent,
+        outputPath,
+        tag,
+        needsContinuation // Force continuation if truncation was detected
+      );
+
+      // Clean up the final content one more time before returning
+      const finalCleanedContent =
+        this.cleanTranslationContent(completedContent);
+
+      // Save final cleaned content if different
+      if (finalCleanedContent !== completedContent) {
+        saveText(outputPath, finalCleanedContent);
+        this.logger.info(`📝 Saved final cleaned content.`);
+      }
+
+      // Return the completed content
+      return finalCleanedContent;
+    } catch (error) {
+      this.logger.error(
+        `❌ Error extracting and continuing content for ${tag}: ${error}`
+      );
+
+      // Return empty string on error
+      return "";
+    }
+  }
+
+  /**
+   * Clean translation content by removing XML tags and continuation markers
+   */
+  private cleanTranslationContent(content: string): string {
+    if (!content) return "";
+
+    try {
+      // Use the utility functions from continuation.ts
+      // First, remove any unpaired XML tags
+      const contentWithoutTags = removeUnpairedXmlTags(content);
+
+      // Then remove any continuation markers
+      const cleanedContent = removeContinuationMarkers(contentWithoutTags);
+
+      return cleanedContent;
+    } catch (error) {
+      this.logger.warn(`⚠️ Error cleaning content: ${error}`);
+      return content; // Return original on error
     }
   }
 }
