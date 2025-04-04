@@ -32,6 +32,7 @@ Unlike conventional translation tools that focus on literal, one-pass translatio
 - **Multi-model Support** - Works with both OpenAI (GPT-4o, GPT-4, etc.) and Anthropic (Claude) models
 - **Detailed Metrics** - Provides comprehensive statistics on the translation process
 - **Resumable Sessions** - Can resume interrupted translation workflows
+- **Real-time Progress Tracking** - Shows elapsed time for each translation step
 - **Detailed Documentation** - Generated at each step to explain the translation choices
 
 ## Installation
@@ -54,25 +55,25 @@ npm install daedumi
 
 ```bash
 # Basic usage
-daedumi translate -i input.txt -t Japanese -o output-directory
+daedumi -i input.txt -t Japanese -o output-directory
 
 # With source language specified
-daedumi translate -i input.txt -s English -t Spanish -o output-directory
+daedumi -i input.txt -s English -t Spanish -o output-directory
 
 # Use a specific model
-daedumi translate -i input.txt -t German -m gpt-4o-mini -o output-directory
+daedumi -i input.txt -t German -m gpt-4o-mini -o output-directory
 
 # Use Claude 3.7 Sonnet for translation (requires ANTHROPIC_API_KEY)
-daedumi translate -i input.txt -t Korean -m claude-3-7-sonnet-latest -o output-directory
+daedumi -i input.txt -t Korean -m claude-3-7-sonnet-latest -o output-directory
 
 # Skip external review
-daedumi translate -i input.txt -t French --skip-external-review -o output-directory
+daedumi -i input.txt -t French --skip-external-review -o output-directory
 
 # Add custom translation instructions
-daedumi translate -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
+daedumi -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
 
-# View pricing information
-daedumi pricing
+# Running without arguments shows help and pricing information
+daedumi
 ```
 
 See the [examples directory](./examples/cli-example.md) for more CLI usage examples.
@@ -156,7 +157,7 @@ await workflow.execute();
 Daedumi requires API keys to work:
 
 - `OPENAI_API_KEY` - Required for using OpenAI models (default)
-- `ANTHROPIC_API_KEY` - Optional, for external review with Claude models
+- `ANTHROPIC_API_KEY` - Optional, for using Claude models or for external review
 
 You can set these in a `.env` file in your project root.
 
@@ -172,7 +173,7 @@ A: Daedumi excels with creative, literary, and nuanced texts where preserving to
 
 **Q: Which models work best?**
 
-A: For high-quality translations, we recommend using GPT-4o or Claude 3 Opus. For faster or more economical translations, GPT-4o-mini or Claude 3 Sonnet work well.
+A: For high-quality translations, we recommend using GPT-4o or Claude 3.7 Sonnet. For faster or more economical translations, GPT-4o-mini works well.
 
 **Q: Can I customize the translation style?**
 
