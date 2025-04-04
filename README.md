@@ -1,4 +1,4 @@
-# Dadeuumi
+# Dadeumi
 
 <div align="center">
   <h3>AI-powered literary translation workflow</h3>
