@@ -1,4 +1,4 @@
-# Daedumi
+# Dadeuumi
 
 <div align="center">
   <h3>AI-powered literary translation workflow</h3>
@@ -16,9 +16,9 @@
 
 ---
 
-## What is Daedumi?
+## What is Dadeumi?
 
-Daedumi is a sophisticated AI-powered translation tool designed specifically for literary and creative translations. The name "Daedumi" is inspired by the traditional Korean textile refinement process, which involves multiple passes of increasingly fine work to create an exceptional final product.
+Dadeumi is a sophisticated AI-powered translation tool designed specifically for literary and creative translations. The name "Dadeumi" is inspired by the traditional Korean textile refinement process, which involves multiple passes of increasingly fine work to create an exceptional final product.
 
 Unlike conventional translation tools that focus on literal, one-pass translations, Daedumi follows a multi-stage workflow that includes analysis, cultural adaptation, and iterative refinement to produce translations that capture not just the words, but the essence, tone, and cultural nuances of the original text.
 
