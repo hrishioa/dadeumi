@@ -24,6 +24,7 @@ import {
   calculateChange,
 } from "../utils";
 import { prompts } from "../prompts/translation";
+import * as fs from "fs";
 
 /**
  * Main translation workflow class
@@ -206,8 +207,13 @@ export class TranslationWorkflow {
           }
         });
 
+        // Validate and adjust the stepCounter based on actually completed output files
+        this.adjustStepCounter();
+
         this.logger.success(
-          `🔄 Resuming translation workflow from step ${this.stepCounter} (${lastLabel})`
+          `🔄 Resuming translation workflow from step ${
+            this.stepCounter
+          } (${this.getStepLabel(this.stepCounter)})`
         );
         return true;
       }
@@ -218,6 +224,69 @@ export class TranslationWorkflow {
     }
 
     return false;
+  }
+
+  /**
+   * Adjust the step counter based on completed output files
+   * This ensures we don't skip steps if they were interrupted
+   */
+  private adjustStepCounter(): void {
+    // Define expected output files for each step
+    const stepFiles = {
+      1: "01_initial_analysis.txt",
+      2: "02_expression_exploration.txt",
+      3: "03_cultural_adaptation.txt",
+      4: "04_title_inspiration.txt",
+      5: "05_first_translation.txt",
+      6: "07_improved_translation.txt", // Note: the file number doesn't match step number
+      7: "09_further_improved_translation.txt",
+      8: "11_final_translation.txt",
+      9: "12_external_review.txt",
+      10: "13_refined_final_translation.txt",
+    };
+
+    // Check if the last completed step has its output file
+    // If not, we need to repeat that step
+    const currentStepFile = stepFiles[this.stepCounter];
+    if (currentStepFile) {
+      const filePath = path.join(this.intermediatesDir, currentStepFile);
+      // If the file doesn't exist or is empty, we need to repeat this step
+      if (!fs.existsSync(filePath) || loadText(filePath, "").length === 0) {
+        // If this is step 1, keep it at 1
+        // Otherwise, go back one step
+        if (this.stepCounter > 1) {
+          this.stepCounter = this.stepCounter - 1;
+          this.logger.warn(
+            `⚠️ Previous step ${
+              this.stepCounter + 1
+            } was incomplete. Resuming from step ${
+              this.stepCounter
+            } (${this.getStepLabel(this.stepCounter)})`
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Get a human-readable label for a step number
+   */
+  private getStepLabel(stepNumber: number): string {
+    const stepLabels = [
+      "Initial Setup",
+      "Initial Analysis",
+      "Expression Exploration",
+      "Cultural Adaptation Discussion",
+      "Title & Inspiration Exploration",
+      "First Translation",
+      "Self-Critique & First Refinement",
+      "Second Refinement",
+      "Final Translation",
+      "External Review",
+      "Final Refinement",
+    ];
+
+    return stepLabels[stepNumber] || "Unknown Step";
   }
 
   /**
@@ -283,458 +352,644 @@ export class TranslationWorkflow {
     let latestTranslationContent = ""; // Track the latest completed translation text
 
     try {
-      // Step 1: Initial Analysis
-      if (this.stepCounter <= 0) {
-        this.stepCounter = 1;
-        this.startSpinnerWithTimer("Step 1/10: Analyzing source text");
-
-        const initialAnalysisPrompt = prompts.initialAnalysis(
-          this.config.sourceText,
-          this.config.targetLanguage,
-          this.config.sourceLanguage
-        );
-
-        const analysisResponse = await this.callAiService(
-          initialAnalysisPrompt
-        );
-        const analysisContent = this.xmlProcessor.extractTagContent(
-          analysisResponse,
-          "analysis"
-        );
-
-        // Save analysis to file
-        const analysisPath = path.join(
-          this.intermediatesDir,
-          "01_initial_analysis.txt"
-        );
-        saveText(analysisPath, analysisContent);
-        this.outputFiles["01 Initial Analysis"] = analysisPath;
-
-        // Add to translation steps
-        this.translationSteps.push("Initial Analysis");
-        this.succeedSpinner("✅ Initial analysis completed");
-        this.logger.success("Initial analysis saved to intermediates");
-      }
-
-      // Step 2: Expression Exploration
-      if (this.stepCounter <= 1) {
-        this.stepCounter = 2;
-        this.startSpinnerWithTimer(
-          "Step 2/10: Exploring expressions in target language"
-        );
-
-        const expressionExplorationPrompt = prompts.expressionExploration(
-          this.config.sourceText,
-          this.config.targetLanguage
-        );
-
-        const expressionResponse = await this.callAiService(
-          expressionExplorationPrompt
-        );
-        const expressionContent = this.xmlProcessor.extractTagContent(
-          expressionResponse,
-          "expression_exploration"
-        );
-
-        // Save expressions to file
-        const expressionPath = path.join(
-          this.intermediatesDir,
-          "02_expression_exploration.txt"
-        );
-        saveText(expressionPath, expressionContent);
-        this.outputFiles["02 Expression Exploration"] = expressionPath;
-
-        // Add to translation steps
-        this.translationSteps.push("Expression Exploration");
-        this.succeedSpinner("✅ Expression exploration completed");
-        this.logger.success("Expression exploration saved to intermediates");
-      }
-
-      // Step 3: Cultural Adaptation
-      if (this.stepCounter <= 2) {
-        this.stepCounter = 3;
-        this.startSpinnerWithTimer("Step 3/10: Discussing cultural adaptation");
-
-        const culturalAdaptationPrompt = prompts.toneAndCulturalDiscussion(
-          this.config.sourceText,
-          this.config.targetLanguage
-        );
-
-        const culturalResponse = await this.callAiService(
-          culturalAdaptationPrompt
-        );
-        const culturalContent = this.xmlProcessor.extractTagContent(
-          culturalResponse,
-          "cultural_discussion"
-        );
-
-        // Save cultural adaptation to file
-        const culturalPath = path.join(
-          this.intermediatesDir,
-          "03_cultural_adaptation.txt"
-        );
-        saveText(culturalPath, culturalContent);
-        this.outputFiles["03 Cultural Adaptation Discussion"] = culturalPath;
-
-        // Add to translation steps
-        this.translationSteps.push("Cultural Adaptation Discussion");
-        this.succeedSpinner("✅ Cultural adaptation discussion completed");
-        this.logger.success(
-          "Cultural adaptation discussion saved to intermediates"
-        );
-      }
-
-      // Step 4: Title & Inspiration Exploration
-      if (this.stepCounter <= 3) {
-        this.stepCounter = 4;
-        this.startSpinnerWithTimer("Step 4/10: Exploring title & inspiration");
-
-        const titleInspirationPrompt = prompts.titleAndInspirationExploration(
-          this.config.sourceText,
-          this.config.targetLanguage
-        );
-
-        const titleResponse = await this.callAiService(titleInspirationPrompt);
-        const titleContent = this.xmlProcessor.extractTagContent(
-          titleResponse,
-          "title_options"
-        );
-
-        // Save title & inspiration to file
-        const titlePath = path.join(
-          this.intermediatesDir,
-          "04_title_inspiration.txt"
-        );
-        saveText(titlePath, titleContent);
-        this.outputFiles["04 Title & Inspiration Exploration"] = titlePath;
-
-        // Add to translation steps
-        this.translationSteps.push("Title & Inspiration Exploration");
-        this.succeedSpinner("✅ Title & inspiration exploration completed");
-        this.logger.success(
-          "Title & inspiration exploration saved to intermediates"
-        );
-      }
-
-      // Step 5: First Translation
-      if (this.stepCounter <= 4) {
-        this.stepCounter = 5;
-        this.startSpinnerWithTimer(
-          "Step 5/10: Creating first translation draft"
-        );
-
-        const firstTranslationPrompt = prompts.firstTranslationAttempt(
-          this.config.sourceText,
-          this.config.targetLanguage
-        );
-
-        const translationResponse = await this.callAiService(
-          firstTranslationPrompt
-        );
-        const translationContent = this.xmlProcessor.extractTagContent(
-          translationResponse,
-          "first_translation"
-        );
-
-        // Save first translation to file
-        const translationPath = path.join(
-          this.intermediatesDir,
-          "05_first_translation.txt"
-        );
-        saveText(translationPath, translationContent);
-        this.outputFiles["05 First Translation"] = translationPath;
-
-        // Update latest translation content
-        latestTranslationContent = translationContent;
-
-        // Calculate metrics for this step
-        const metrics = calculateMetricsForLanguage(
-          translationContent,
-          this.config.targetLanguage,
-          false,
-          this.sourceMetrics
-        );
-
-        this.translationMetrics.set("first_translation", metrics);
-
-        // Add to translation steps
-        this.translationSteps.push("First Translation");
-        this.succeedSpinner("✅ First translation draft completed");
-        this.logger.success("First translation draft saved to intermediates");
-      }
-
-      // Step 6: Self-critique & First Refinement
-      if (this.stepCounter <= 5) {
-        this.stepCounter = 6;
-        this.startSpinnerWithTimer(
-          "Step 6/10: Self-critique & first refinement"
-        );
-
-        // Get the previous translation content
-        const prevTranslationPath = path.join(
-          this.intermediatesDir,
-          "05_first_translation.txt"
-        );
-        const prevTranslation = loadText(prevTranslationPath, "");
-
-        const selfCritiquePrompt = prompts.selfCritiqueAndRefinement(
-          this.config.targetLanguage,
-          this.config.sourceLanguage,
-          this.config.sourceText,
-          prevTranslation
-        );
-
-        const critiqueResponse = await this.callAiService(selfCritiquePrompt);
-        const improvedTranslation = this.xmlProcessor.extractTagContent(
-          critiqueResponse,
-          "improved_translation"
-        );
-
-        // Save improved translation to file
-        const improvedPath = path.join(
-          this.intermediatesDir,
-          "07_improved_translation.txt"
-        );
-        saveText(improvedPath, improvedTranslation);
-        this.outputFiles["07 Improved Translation"] = improvedPath;
-
-        // Update latest translation content
-        latestTranslationContent = improvedTranslation;
-
-        // Calculate metrics for this step
-        const metrics = calculateMetricsForLanguage(
-          improvedTranslation,
-          this.config.targetLanguage,
-          false,
-          this.sourceMetrics
-        );
-
-        this.translationMetrics.set("improved_translation", metrics);
-
-        // Add to translation steps
-        this.translationSteps.push("Self-Critique & First Refinement");
-        this.succeedSpinner("✅ Self-critique & first refinement completed");
-        this.logger.success("Improved translation saved to intermediates");
-      }
-
-      // Step 7: Second Refinement
-      if (this.stepCounter <= 6) {
-        this.stepCounter = 7;
-        this.startSpinnerWithTimer("Step 7/10: Second refinement");
-
-        // Get the previous translation content
-        const prevTranslationPath = path.join(
-          this.intermediatesDir,
-          "07_improved_translation.txt"
-        );
-        const prevTranslation = loadText(prevTranslationPath, "");
-
-        const secondRefinementPrompt = prompts.furtherRefinement(
-          this.config.targetLanguage,
-          this.config.sourceLanguage,
-          this.config.sourceText,
-          prevTranslation
-        );
-
-        const secondRefineResponse = await this.callAiService(
-          secondRefinementPrompt
-        );
-        const furtherImprovedTranslation = this.xmlProcessor.extractTagContent(
-          secondRefineResponse,
-          "further_improved_translation"
-        );
-
-        // Save further improved translation to file
-        const furtherImprovedPath = path.join(
-          this.intermediatesDir,
-          "09_further_improved_translation.txt"
-        );
-        saveText(furtherImprovedPath, furtherImprovedTranslation);
-        this.outputFiles["09 Further Improved Translation"] =
-          furtherImprovedPath;
-
-        // Update latest translation content
-        latestTranslationContent = furtherImprovedTranslation;
-
-        // Calculate metrics for this step
-        const metrics = calculateMetricsForLanguage(
-          furtherImprovedTranslation,
-          this.config.targetLanguage,
-          false,
-          this.sourceMetrics
-        );
-
-        this.translationMetrics.set("further_improved_translation", metrics);
-
-        // Add to translation steps
-        this.translationSteps.push("Second Refinement");
-        this.succeedSpinner("✅ Second refinement completed");
-        this.logger.success(
-          "Further improved translation saved to intermediates"
-        );
-      }
-
-      // Step 8: Final Translation
-      if (this.stepCounter <= 7) {
-        this.stepCounter = 8;
-        this.startSpinnerWithTimer("Step 8/10: Creating final translation");
-
-        // Get the previous translation content
-        const prevTranslationPath = path.join(
-          this.intermediatesDir,
-          "09_further_improved_translation.txt"
-        );
-        const prevTranslation = loadText(prevTranslationPath, "");
-
-        const finalTranslationPrompt = prompts.finalTranslation(
-          this.config.targetLanguage,
-          this.config.sourceLanguage,
-          this.config.sourceText,
-          prevTranslation
-        );
-
-        const finalResponse = await this.callAiService(finalTranslationPrompt);
-        const finalTranslation = this.xmlProcessor.extractTagContent(
-          finalResponse,
-          "final_translation"
-        );
-
-        // Save final translation to file
-        const finalPath = path.join(
-          this.intermediatesDir,
-          "11_final_translation.txt"
-        );
-        saveText(finalPath, finalTranslation);
-        this.outputFiles["11 Final Translation"] = finalPath;
-
-        // Update latest translation content
-        latestTranslationContent = finalTranslation;
-
-        // Calculate metrics for this step
-        const metrics = calculateMetricsForLanguage(
-          finalTranslation,
-          this.config.targetLanguage,
-          false,
-          this.sourceMetrics
-        );
-
-        this.translationMetrics.set("final_translation", metrics);
-
-        // Add to translation steps
-        this.translationSteps.push("Final Translation");
-        this.succeedSpinner("✅ Final translation completed");
-        this.logger.success("Final translation saved to intermediates");
-      }
-
-      // Step 9: External Review (optional)
-      let externalReviewContent = "";
-      if (!this.config.skipExternalReview && this.stepCounter <= 8) {
-        this.stepCounter = 9;
-        this.startSpinnerWithTimer("Step 9/10: Conducting external review");
-
-        // Get the final translation content
-        const finalTranslationPath = path.join(
-          this.intermediatesDir,
-          "11_final_translation.txt"
-        );
-        const finalTranslation = loadText(finalTranslationPath, "");
-
-        const externalReviewPrompt = prompts.externalReviewUser(
-          this.config.targetLanguage,
-          this.config.sourceLanguage,
-          this.config.sourceText,
-          finalTranslation
-        );
-
-        // Use a different model for external review if possible
-        const externalResponse = await this.callAiService(
-          externalReviewPrompt,
-          0,
-          true
-        );
-        externalReviewContent = this.xmlProcessor.extractTagContent(
-          externalResponse,
-          "external_review"
-        );
-
-        // Save external review to file
-        const reviewPath = path.join(
-          this.intermediatesDir,
-          "12_external_review.txt"
-        );
-        saveText(reviewPath, externalReviewContent);
-        this.outputFiles["12 External Review"] = reviewPath;
-
-        // Add to translation steps
-        this.translationSteps.push("External Review");
-        this.succeedSpinner("✅ External review completed");
-        this.logger.success("External review saved to intermediates");
-      }
-
-      // Step 10: Final Refinement
-      if (
-        (!this.config.skipExternalReview && this.stepCounter <= 9) ||
-        (this.config.skipExternalReview && this.stepCounter <= 8)
-      ) {
-        this.stepCounter = 10;
-        this.startSpinnerWithTimer("Step 10/10: Applying final refinements");
-
-        // Get the final translation content
-        const finalTranslationPath = path.join(
-          this.intermediatesDir,
-          "11_final_translation.txt"
-        );
-        const finalTranslation = loadText(finalTranslationPath, "");
-
-        // Skip this step if external review was skipped
-        let refinedFinalTranslation = finalTranslation;
-
-        if (!this.config.skipExternalReview) {
-          const finalRefinementPrompt = prompts.applyExternalFeedback(
-            this.config.targetLanguage,
-            this.config.sourceLanguage,
+      // Use an execution loop to allow steps to be repeated if needed
+      let continueExecution = true;
+      while (continueExecution) {
+        continueExecution = false; // Will be set to true if we need to repeat a step
+
+        // Step 1: Initial Analysis
+        if (this.stepCounter <= 0) {
+          this.stepCounter = 1;
+          this.startSpinnerWithTimer("Step 1/10: Analyzing source text");
+
+          const initialAnalysisPrompt = prompts.initialAnalysis(
             this.config.sourceText,
-            finalTranslation,
-            externalReviewContent
+            this.config.targetLanguage,
+            this.config.sourceLanguage
           );
 
-          const refinedResponse = await this.callAiService(
-            finalRefinementPrompt
+          const analysisResponse = await this.callAiService(
+            initialAnalysisPrompt
           );
-          refinedFinalTranslation = this.xmlProcessor.extractTagContent(
-            refinedResponse,
-            "refined_final_translation"
+          const analysisContent = this.xmlProcessor.extractTagContent(
+            analysisResponse,
+            "analysis"
+          );
+
+          // Save analysis to file
+          const analysisPath = path.join(
+            this.intermediatesDir,
+            "01_initial_analysis.txt"
+          );
+          saveText(analysisPath, analysisContent);
+          this.outputFiles["01 Initial Analysis"] = analysisPath;
+
+          // Add to translation steps
+          this.translationSteps.push("Initial Analysis");
+          this.succeedSpinner("✅ Initial analysis completed");
+          this.logger.success("Initial analysis saved to intermediates");
+        }
+
+        // Step 2: Expression Exploration
+        if (this.stepCounter <= 1) {
+          this.stepCounter = 2;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 1 due to missing dependencies for step 2`
+            );
+            this.stepCounter = 1;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer(
+            "Step 2/10: Exploring expressions in target language"
+          );
+
+          const expressionExplorationPrompt = prompts.expressionExploration(
+            this.config.sourceText,
+            this.config.targetLanguage
+          );
+
+          const expressionResponse = await this.callAiService(
+            expressionExplorationPrompt
+          );
+          const expressionContent = this.xmlProcessor.extractTagContent(
+            expressionResponse,
+            "expression_exploration"
+          );
+
+          // Save expressions to file
+          const expressionPath = path.join(
+            this.intermediatesDir,
+            "02_expression_exploration.txt"
+          );
+          saveText(expressionPath, expressionContent);
+          this.outputFiles["02 Expression Exploration"] = expressionPath;
+
+          // Add to translation steps
+          this.translationSteps.push("Expression Exploration");
+          this.succeedSpinner("✅ Expression exploration completed");
+          this.logger.success("Expression exploration saved to intermediates");
+        }
+
+        // Step 3: Cultural Adaptation
+        if (this.stepCounter <= 2) {
+          this.stepCounter = 3;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 2 due to missing dependencies for step 3`
+            );
+            this.stepCounter = 2;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer(
+            "Step 3/10: Discussing cultural adaptation"
+          );
+
+          const culturalAdaptationPrompt = prompts.toneAndCulturalDiscussion(
+            this.config.sourceText,
+            this.config.targetLanguage
+          );
+
+          const culturalResponse = await this.callAiService(
+            culturalAdaptationPrompt
+          );
+          const culturalContent = this.xmlProcessor.extractTagContent(
+            culturalResponse,
+            "cultural_discussion"
+          );
+
+          // Save cultural adaptation to file
+          const culturalPath = path.join(
+            this.intermediatesDir,
+            "03_cultural_adaptation.txt"
+          );
+          saveText(culturalPath, culturalContent);
+          this.outputFiles["03 Cultural Adaptation Discussion"] = culturalPath;
+
+          // Add to translation steps
+          this.translationSteps.push("Cultural Adaptation Discussion");
+          this.succeedSpinner("✅ Cultural adaptation discussion completed");
+          this.logger.success(
+            "Cultural adaptation discussion saved to intermediates"
           );
         }
 
-        // Save refined final translation to file
-        const refinedPath = path.join(
-          this.intermediatesDir,
-          "13_refined_final_translation.txt"
-        );
-        saveText(refinedPath, refinedFinalTranslation);
-        this.outputFiles["13 Refined Final Translation"] = refinedPath;
+        // Step 4: Title & Inspiration Exploration
+        if (this.stepCounter <= 3) {
+          this.stepCounter = 4;
 
-        // Update latest translation content
-        latestTranslationContent = refinedFinalTranslation;
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 3 due to missing dependencies for step 4`
+            );
+            this.stepCounter = 3;
+            continueExecution = true;
+            continue;
+          }
 
-        // Calculate metrics for this step
-        const metrics = calculateMetricsForLanguage(
-          refinedFinalTranslation,
-          this.config.targetLanguage,
-          false,
-          this.sourceMetrics
-        );
+          this.startSpinnerWithTimer(
+            "Step 4/10: Exploring title & inspiration"
+          );
 
-        this.translationMetrics.set("refined_final_translation", metrics);
+          const titleInspirationPrompt = prompts.titleAndInspirationExploration(
+            this.config.sourceText,
+            this.config.targetLanguage
+          );
 
-        // Add to translation steps
-        this.translationSteps.push("Final Refinement");
-        this.succeedSpinner("✅ Final refinement completed");
-        this.logger.success("Refined final translation saved to intermediates");
+          const titleResponse = await this.callAiService(
+            titleInspirationPrompt
+          );
+          const titleContent = this.xmlProcessor.extractTagContent(
+            titleResponse,
+            "title_options"
+          );
 
-        // Save the final output
-        saveText(this.finalOutputPath, refinedFinalTranslation);
+          // Save title & inspiration to file
+          const titlePath = path.join(
+            this.intermediatesDir,
+            "04_title_inspiration.txt"
+          );
+          saveText(titlePath, titleContent);
+          this.outputFiles["04 Title & Inspiration Exploration"] = titlePath;
+
+          // Add to translation steps
+          this.translationSteps.push("Title & Inspiration Exploration");
+          this.succeedSpinner("✅ Title & inspiration exploration completed");
+          this.logger.success(
+            "Title & inspiration exploration saved to intermediates"
+          );
+        }
+
+        // Step 5: First Translation
+        if (this.stepCounter <= 4) {
+          this.stepCounter = 5;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 4 due to missing dependencies for step 5`
+            );
+            this.stepCounter = 4;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer(
+            "Step 5/10: Creating first translation draft"
+          );
+
+          const firstTranslationPrompt = prompts.firstTranslationAttempt(
+            this.config.sourceText,
+            this.config.targetLanguage
+          );
+
+          const translationResponse = await this.callAiService(
+            firstTranslationPrompt
+          );
+          const translationContent = this.xmlProcessor.extractTagContent(
+            translationResponse,
+            "first_translation"
+          );
+
+          // Save first translation to file
+          const translationPath = path.join(
+            this.intermediatesDir,
+            "05_first_translation.txt"
+          );
+          saveText(translationPath, translationContent);
+          this.outputFiles["05 First Translation"] = translationPath;
+
+          // Update latest translation content
+          latestTranslationContent = translationContent;
+
+          // Calculate metrics for this step
+          const metrics = calculateMetricsForLanguage(
+            translationContent,
+            this.config.targetLanguage,
+            false,
+            this.sourceMetrics
+          );
+
+          this.translationMetrics.set("first_translation", metrics);
+
+          // Add to translation steps
+          this.translationSteps.push("First Translation");
+          this.succeedSpinner("✅ First translation draft completed");
+          this.logger.success("First translation draft saved to intermediates");
+        }
+
+        // Step 6: Self-critique & First Refinement
+        if (this.stepCounter <= 5) {
+          this.stepCounter = 6;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 5 due to missing dependencies for step 6`
+            );
+            this.stepCounter = 5;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer(
+            "Step 6/10: Self-critique & first refinement"
+          );
+
+          // Get the previous translation content
+          const prevTranslationPath = path.join(
+            this.intermediatesDir,
+            "05_first_translation.txt"
+          );
+          const prevTranslation = loadText(prevTranslationPath, "");
+
+          const selfCritiquePrompt = prompts.selfCritiqueAndRefinement(
+            this.config.targetLanguage,
+            this.config.sourceLanguage,
+            this.config.sourceText,
+            prevTranslation
+          );
+
+          const critiqueResponse = await this.callAiService(selfCritiquePrompt);
+          const improvedTranslation = this.xmlProcessor.extractTagContent(
+            critiqueResponse,
+            "improved_translation"
+          );
+
+          // Save improved translation to file
+          const improvedPath = path.join(
+            this.intermediatesDir,
+            "07_improved_translation.txt"
+          );
+          saveText(improvedPath, improvedTranslation);
+          this.outputFiles["07 Improved Translation"] = improvedPath;
+
+          // Update latest translation content
+          latestTranslationContent = improvedTranslation;
+
+          // Calculate metrics for this step
+          const metrics = calculateMetricsForLanguage(
+            improvedTranslation,
+            this.config.targetLanguage,
+            false,
+            this.sourceMetrics
+          );
+
+          this.translationMetrics.set("improved_translation", metrics);
+
+          // Add to translation steps
+          this.translationSteps.push("Self-Critique & First Refinement");
+          this.succeedSpinner("✅ Self-critique & first refinement completed");
+          this.logger.success("Improved translation saved to intermediates");
+        }
+
+        // Step 7: Second Refinement
+        if (this.stepCounter <= 6) {
+          this.stepCounter = 7;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 6 due to missing dependencies for step 7`
+            );
+            this.stepCounter = 6;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer("Step 7/10: Second refinement");
+
+          // Get the previous translation content
+          const prevTranslationPath = path.join(
+            this.intermediatesDir,
+            "07_improved_translation.txt"
+          );
+          const prevTranslation = loadText(prevTranslationPath, "");
+
+          const secondRefinementPrompt = prompts.furtherRefinement(
+            this.config.targetLanguage,
+            this.config.sourceLanguage,
+            this.config.sourceText,
+            prevTranslation
+          );
+
+          const secondRefineResponse = await this.callAiService(
+            secondRefinementPrompt
+          );
+          const furtherImprovedTranslation =
+            this.xmlProcessor.extractTagContent(
+              secondRefineResponse,
+              "further_improved_translation"
+            );
+
+          // Save further improved translation to file
+          const furtherImprovedPath = path.join(
+            this.intermediatesDir,
+            "09_further_improved_translation.txt"
+          );
+          saveText(furtherImprovedPath, furtherImprovedTranslation);
+          this.outputFiles["09 Further Improved Translation"] =
+            furtherImprovedPath;
+
+          // Update latest translation content
+          latestTranslationContent = furtherImprovedTranslation;
+
+          // Calculate metrics for this step
+          const metrics = calculateMetricsForLanguage(
+            furtherImprovedTranslation,
+            this.config.targetLanguage,
+            false,
+            this.sourceMetrics
+          );
+
+          this.translationMetrics.set("further_improved_translation", metrics);
+
+          // Add to translation steps
+          this.translationSteps.push("Second Refinement");
+          this.succeedSpinner("✅ Second refinement completed");
+          this.logger.success(
+            "Further improved translation saved to intermediates"
+          );
+        }
+
+        // Step 8: Final Translation
+        if (this.stepCounter <= 7) {
+          this.stepCounter = 8;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 7 due to missing dependencies for step 8`
+            );
+            this.stepCounter = 7;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer("Step 8/10: Creating final translation");
+
+          // Get the previous translation content
+          const prevTranslationPath = path.join(
+            this.intermediatesDir,
+            "09_further_improved_translation.txt"
+          );
+          const prevTranslation = loadText(prevTranslationPath, "");
+
+          // For final translation step, consider using a fresh conversation for long texts
+          const estimatedSourceTokens = Math.ceil(
+            this.config.sourceText.length / 4
+          );
+          const estimatedTranslationTokens = Math.ceil(
+            prevTranslation.length / 4
+          );
+
+          // If text is very large, reset conversation to avoid context limits
+          if (estimatedSourceTokens + estimatedTranslationTokens > 12000) {
+            this.logger.info(
+              "📝 Large translation detected. Starting fresh conversation for final translation step."
+            );
+            // Reset conversation with just the system message
+            const systemPrompt = prompts.system(
+              this.config.targetLanguage,
+              this.config.sourceLanguage,
+              this.config.customInstructions,
+              "final_translation"
+            );
+            this.conversation = [
+              {
+                role: "system",
+                content: systemPrompt,
+              },
+            ];
+            this.saveConversationHistory("Reset for final translation");
+          }
+
+          const finalTranslationPrompt = prompts.finalTranslation(
+            this.config.targetLanguage,
+            this.config.sourceLanguage,
+            this.config.sourceText,
+            prevTranslation
+          );
+
+          const finalResponse = await this.callAiService(
+            finalTranslationPrompt
+          );
+          const finalTranslation = this.xmlProcessor.extractTagContent(
+            finalResponse,
+            "final_translation"
+          );
+
+          // Save final translation to file
+          const finalPath = path.join(
+            this.intermediatesDir,
+            "11_final_translation.txt"
+          );
+          saveText(finalPath, finalTranslation);
+          this.outputFiles["11 Final Translation"] = finalPath;
+
+          // Update latest translation content
+          latestTranslationContent = finalTranslation;
+
+          // Calculate metrics for this step
+          const metrics = calculateMetricsForLanguage(
+            finalTranslation,
+            this.config.targetLanguage,
+            false,
+            this.sourceMetrics
+          );
+
+          this.translationMetrics.set("final_translation", metrics);
+
+          // Add to translation steps
+          this.translationSteps.push("Final Translation");
+          this.succeedSpinner("✅ Final translation completed");
+          this.logger.success("Final translation saved to intermediates");
+        }
+
+        // Step 9: External Review (optional)
+        let externalReviewContent = "";
+        if (!this.config.skipExternalReview && this.stepCounter <= 8) {
+          this.stepCounter = 9;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            this.logger.warn(
+              `⚠️ Repeating step 8 due to missing dependencies for step 9`
+            );
+            this.stepCounter = 8;
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer("Step 9/10: Conducting external review");
+
+          // Get the final translation content
+          const finalTranslationPath = path.join(
+            this.intermediatesDir,
+            "11_final_translation.txt"
+          );
+          const finalTranslation = loadText(finalTranslationPath, "");
+
+          const externalReviewPrompt = prompts.externalReviewUser(
+            this.config.targetLanguage,
+            this.config.sourceLanguage,
+            this.config.sourceText,
+            finalTranslation
+          );
+
+          // Use a different model for external review if possible
+          const externalResponse = await this.callAiService(
+            externalReviewPrompt,
+            0,
+            true
+          );
+          externalReviewContent = this.xmlProcessor.extractTagContent(
+            externalResponse,
+            "external_review"
+          );
+
+          // Save external review to file
+          const reviewPath = path.join(
+            this.intermediatesDir,
+            "12_external_review.txt"
+          );
+          saveText(reviewPath, externalReviewContent);
+          this.outputFiles["12 External Review"] = reviewPath;
+
+          // Add to translation steps
+          this.translationSteps.push("External Review");
+          this.succeedSpinner("✅ External review completed");
+          this.logger.success("External review saved to intermediates");
+        }
+
+        // Step 10: Final Refinement
+        if (
+          (!this.config.skipExternalReview && this.stepCounter <= 9) ||
+          (this.config.skipExternalReview && this.stepCounter <= 8)
+        ) {
+          this.stepCounter = 10;
+
+          // Validate dependencies
+          if (!this.validateStepDependencies(this.stepCounter)) {
+            if (!this.config.skipExternalReview) {
+              this.logger.warn(
+                `⚠️ Repeating step 9 due to missing dependencies for step 10`
+              );
+              this.stepCounter = 9;
+            } else {
+              this.logger.warn(
+                `⚠️ Repeating step 8 due to missing dependencies for step 10`
+              );
+              this.stepCounter = 8;
+            }
+            continueExecution = true;
+            continue;
+          }
+
+          this.startSpinnerWithTimer("Step 10/10: Applying final refinements");
+
+          // Get the final translation content
+          const finalTranslationPath = path.join(
+            this.intermediatesDir,
+            "11_final_translation.txt"
+          );
+          const finalTranslation = loadText(finalTranslationPath, "");
+
+          // For final refinement, reset conversation to avoid context limits with long texts
+          const estimatedTranslationTokens = Math.ceil(
+            finalTranslation.length / 4
+          );
+          const estimatedReviewTokens = externalReviewContent
+            ? Math.ceil(externalReviewContent.length / 4)
+            : 0;
+
+          // If text is very large, reset conversation
+          if (estimatedTranslationTokens + estimatedReviewTokens > 10000) {
+            this.logger.info(
+              "📝 Large translation detected. Starting fresh conversation for final refinement step."
+            );
+            // Reset conversation with just the system message
+            const systemPrompt = prompts.system(
+              this.config.targetLanguage,
+              this.config.sourceLanguage,
+              this.config.customInstructions,
+              "apply_feedback"
+            );
+            this.conversation = [
+              {
+                role: "system",
+                content: systemPrompt,
+              },
+            ];
+            this.saveConversationHistory("Reset for final refinement");
+          }
+
+          // Skip this step if external review was skipped
+          let refinedFinalTranslation = finalTranslation;
+
+          if (!this.config.skipExternalReview) {
+            const finalRefinementPrompt = prompts.applyExternalFeedback(
+              this.config.targetLanguage,
+              this.config.sourceLanguage,
+              this.config.sourceText,
+              finalTranslation,
+              externalReviewContent
+            );
+
+            const refinedResponse = await this.callAiService(
+              finalRefinementPrompt
+            );
+            refinedFinalTranslation = this.xmlProcessor.extractTagContent(
+              refinedResponse,
+              "refined_final_translation"
+            );
+          }
+
+          // Save refined final translation to file
+          const refinedPath = path.join(
+            this.intermediatesDir,
+            "13_refined_final_translation.txt"
+          );
+          saveText(refinedPath, refinedFinalTranslation);
+          this.outputFiles["13 Refined Final Translation"] = refinedPath;
+
+          // Update latest translation content
+          latestTranslationContent = refinedFinalTranslation;
+
+          // Calculate metrics for this step
+          const metrics = calculateMetricsForLanguage(
+            refinedFinalTranslation,
+            this.config.targetLanguage,
+            false,
+            this.sourceMetrics
+          );
+
+          this.translationMetrics.set("refined_final_translation", metrics);
+
+          // Add to translation steps
+          this.translationSteps.push("Final Refinement");
+          this.succeedSpinner("✅ Final refinement completed");
+          this.logger.success(
+            "Refined final translation saved to intermediates"
+          );
+
+          // Save the final output
+          saveText(this.finalOutputPath, refinedFinalTranslation);
+        }
+
+        // If we've completed all steps, break the loop
+        if (!continueExecution) {
+          break;
+        }
       }
 
       // Save the final results
@@ -936,6 +1191,9 @@ export class TranslationWorkflow {
           content: prompt,
         });
       } else {
+        // Check if we need to manage conversation context to avoid token limits
+        this.manageConversationContext(this.config.modelName);
+
         // Set step-specific system prompt
         const systemPrompt = prompts.system(
           this.config.targetLanguage,
@@ -1038,6 +1296,33 @@ export class TranslationWorkflow {
         this.saveConversationHistory(
           `API Call Error - ${currentStepLabel} - Attempt ${retryCount + 1}`
         );
+      }
+
+      // Check if this is a context length error
+      const isContextLengthError =
+        error?.message?.includes("context length") ||
+        error?.message?.includes("maximum context length") ||
+        error?.code === "context_length_exceeded";
+
+      if (isContextLengthError && !isExternalReview) {
+        this.logger.warn(
+          "🔄 Context length exceeded. Aggressively trimming conversation history..."
+        );
+
+        // Get system message
+        const systemMessage = this.conversation[0];
+
+        // Get latest user message (the prompt we just tried to use)
+        const latestUserMessage =
+          this.conversation[this.conversation.length - 1];
+
+        // Reset conversation to just system + prompt
+        this.conversation = [systemMessage, latestUserMessage];
+
+        this.logger.info(
+          "📝 Conversation history pruned to only system message and current prompt"
+        );
+        this.saveConversationHistory("Pruned for context length error");
       }
 
       if (retryCount < this.config.maxRetries) {
@@ -1223,13 +1508,59 @@ export class TranslationWorkflow {
         const content = loadText(latestFileFound);
         saveText(this.finalOutputPath, content);
 
+        // Determine which step we were on and what step to resume from
+        const currentStepLabel = this.getStepLabel(this.stepCounter);
+        const recommendedNextStep = this.stepCounter > 0 ? this.stepCounter : 1;
+
         console.log(
           chalk.yellow(
-            `⚠️ Process interrupted. Saved latest available translation (${path.basename(
-              latestFileFound
-            )}) to: ${this.finalOutputPath}`
+            `⚠️ Process interrupted during step ${this.stepCounter} (${currentStepLabel}).`
           )
         );
+        console.log(
+          chalk.yellow(
+            `   Latest available translation (${path.basename(
+              latestFileFound
+            )}) saved to: ${this.finalOutputPath}`
+          )
+        );
+        console.log(
+          chalk.green(
+            `   To resume, run the command again. It will automatically continue from step ${recommendedNextStep}.`
+          )
+        );
+
+        // Additional check to verify the step file exists and is not empty
+        if (this.stepCounter > 0) {
+          const stepDependencies = {
+            6: "05_first_translation.txt",
+            7: "07_improved_translation.txt",
+            8: "09_further_improved_translation.txt",
+            9: "11_final_translation.txt",
+            10: "11_final_translation.txt",
+          };
+
+          const dependencyFile =
+            stepDependencies[this.stepCounter as keyof typeof stepDependencies];
+          if (dependencyFile) {
+            const filePath = path.join(this.intermediatesDir, dependencyFile);
+            if (
+              !fs.existsSync(filePath) ||
+              loadText(filePath, "").length === 0
+            ) {
+              console.log(
+                chalk.red(
+                  `   Warning: Required file for next step (${dependencyFile}) is missing or empty.`
+                )
+              );
+              console.log(
+                chalk.red(
+                  `   You may need to manually reset to an earlier step using the --step option.`
+                )
+              );
+            }
+          }
+        }
       } catch (saveError) {
         console.error(
           chalk.red(
@@ -1241,9 +1572,10 @@ export class TranslationWorkflow {
     } else {
       console.log(
         chalk.yellow(
-          `⚠️ Process interrupted. No intermediate translation files found to save.`
+          `⚠️ Process interrupted at step ${this.stepCounter}. No intermediate translation files found to save.`
         )
       );
+      console.log(chalk.green(`   To restart, run the command again.`));
     }
   }
 
@@ -1301,5 +1633,126 @@ export class TranslationWorkflow {
     this.clearSpinnerInterval();
     const elapsedSeconds = (performance.now() - this.spinnerStartTime) / 1000;
     this.spinner.fail(`${message} (${elapsedSeconds.toFixed(1)}s)`);
+  }
+
+  /**
+   * Manage conversation context to avoid token limits
+   * Keeps system message and most recent exchanges, removing older history when needed
+   */
+  private manageConversationContext(modelName: string): void {
+    // Skip for external review which uses a fresh conversation
+    if (this.conversation.length <= 2) return;
+
+    // Estimate token count in current conversation
+    let totalEstimatedTokens = 0;
+
+    // Rough token estimation (4 chars ≈ 1 token on average)
+    for (const message of this.conversation) {
+      totalEstimatedTokens += Math.ceil(message.content.length / 4);
+    }
+
+    // Get model limit
+    const modelLimits: Record<string, number> = {
+      "gpt-4.5-preview": 16384,
+      "gpt-4o": 16384,
+      "gpt-4o-mini": 16384,
+      "claude-3-7-sonnet-latest": 128000,
+    };
+
+    // Determine model limit
+    let modelLimit = 0;
+
+    // Try exact match first
+    modelLimit = modelLimits[modelName] || 0;
+
+    // If no exact match, try prefix matching
+    if (!modelLimit) {
+      for (const [modelPrefix, limit] of Object.entries(modelLimits)) {
+        if (modelName.startsWith(modelPrefix)) {
+          modelLimit = limit;
+          break;
+        }
+      }
+    }
+
+    // Set a reasonable default if no match found
+    if (!modelLimit) modelLimit = 16384;
+
+    // Set threshold (80% of limit)
+    const tokenThreshold = Math.floor(modelLimit * 0.8);
+
+    // If approaching limit, trim conversation history
+    if (totalEstimatedTokens > tokenThreshold) {
+      this.logger.warn(
+        `⚠️ Approaching token limit (est. ${totalEstimatedTokens} tokens). Trimming conversation history...`
+      );
+
+      // Keep system message and most recent exchanges
+      const systemMessage = this.conversation[0];
+      const recentMessages = this.conversation.slice(-4); // Keep last 2 exchanges (4 messages)
+
+      // Reset conversation with system message and recent exchanges
+      this.conversation = [systemMessage, ...recentMessages];
+
+      // Calculate new estimate
+      let newEstimate = 0;
+      for (const message of this.conversation) {
+        newEstimate += Math.ceil(message.content.length / 4);
+      }
+
+      this.logger.info(
+        `ℹ️ Trimmed conversation history to ${this.conversation.length} messages (est. ${newEstimate} tokens)`
+      );
+    }
+  }
+
+  /**
+   * Validate that dependencies for a step exist
+   * Returns true if dependencies exist, false otherwise
+   */
+  private validateStepDependencies(stepNumber: number): boolean {
+    // Define file dependencies for each step
+    const stepDependencies: Record<number, string[]> = {
+      // Step 2+ don't have critical file dependencies from previous steps
+      // The source text is all they need, which is passed directly
+      2: [],
+      3: [],
+      4: [],
+      5: [],
+      6: ["05_first_translation.txt"], // Step 6 needs output from step 5
+      7: ["07_improved_translation.txt"], // Step 7 needs output from step 6
+      8: ["09_further_improved_translation.txt"], // Step 8 needs output from step 7
+      9: ["11_final_translation.txt"], // Step 9 needs output from step 8
+      10: ["11_final_translation.txt"], // Step 10 needs output from step 8
+    };
+
+    // If step has no dependencies, it's valid
+    if (
+      !stepDependencies[stepNumber] ||
+      stepDependencies[stepNumber].length === 0
+    ) {
+      return true;
+    }
+
+    // Check if all dependencies exist and have content
+    for (const file of stepDependencies[stepNumber]) {
+      const filePath = path.join(this.intermediatesDir, file);
+      if (!fs.existsSync(filePath)) {
+        this.logger.warn(
+          `⚠️ Missing dependency for step ${stepNumber}: ${file} not found`
+        );
+        return false;
+      }
+
+      const content = loadText(filePath, "");
+      if (content.length === 0) {
+        this.logger.warn(
+          `⚠️ Missing dependency for step ${stepNumber}: ${file} is empty`
+        );
+        return false;
+      }
+    }
+
+    return true;
   }
 }
