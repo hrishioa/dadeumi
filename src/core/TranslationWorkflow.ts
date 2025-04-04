@@ -28,6 +28,7 @@ import {
   combineTranslation,
   removeUnpairedXmlTags,
   removeContinuationMarkers,
+  MODEL_CONTEXT_LIMITS,
 } from "../utils";
 import { prompts } from "../prompts/translation";
 
@@ -608,64 +609,8 @@ export class TranslationWorkflow {
         );
 
         // Get model's context limit
-        const modelContextLimits: Record<string, number> = {
-          // OpenAI models with 128K context window
-          "gpt-4.5-preview": 128000,
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4o-mini": 128000,
-          "gpt-4": 128000,
-
-          // Claude models
-          "claude-3-7-sonnet-latest": 128000,
-          "claude-3-opus-20240229": 200000,
-          "claude-3-sonnet-20240229": 128000,
-          "claude-3-haiku-20240307": 48000,
-          "claude-3-5-sonnet-20240620": 128000,
-        };
-
-        // Common model prefixes to check
-        const prefixMap = {
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4": 128000,
-          "claude-3-opus": 200000,
-          "claude-3-sonnet": 128000,
-          "claude-3-haiku": 48000,
-          "claude-3.5": 128000,
-          "claude-3-7": 128000,
-        };
-
-        let modelContextLimit = 0;
-
-        // Try exact match first
-        modelContextLimit = modelContextLimits[this.config.modelName] || 0;
-
-        // If no exact match, try prefix matching
-        if (!modelContextLimit) {
-          for (const [prefix, limit] of Object.entries(prefixMap)) {
-            if (this.config.modelName.startsWith(prefix)) {
-              modelContextLimit = limit;
-              if (this.config.verbose) {
-                this.logger.info(
-                  `📚 Matched model ${
-                    this.config.modelName
-                  } to prefix ${prefix} with ${limit.toLocaleString()} context limit`
-                );
-              }
-              break;
-            }
-          }
-        }
-
-        if (!modelContextLimit) {
-          modelContextLimit = 16384; // Default conservative limit
-          this.logger.warn(
-            `⚠️ Unknown model ${
-              this.config.modelName
-            }, using conservative default context limit of ${modelContextLimit.toLocaleString()} tokens`
-          );
-        }
+        const modelContextLimit =
+          MODEL_CONTEXT_LIMITS[this.config.modelName] || 0;
 
         // If text is very large or conversation history is getting too big, reset conversation
         // Use 50% of the context limit as a threshold to be safe
@@ -814,64 +759,8 @@ export class TranslationWorkflow {
           : 0;
 
         // Get model's context limit (same as in step 8)
-        const modelContextLimits: Record<string, number> = {
-          // OpenAI models with 128K context window
-          "gpt-4.5-preview": 128000,
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4o-mini": 128000,
-          "gpt-4": 128000,
-
-          // Claude models
-          "claude-3-7-sonnet-latest": 128000,
-          "claude-3-opus-20240229": 200000,
-          "claude-3-sonnet-20240229": 128000,
-          "claude-3-haiku-20240307": 48000,
-          "claude-3-5-sonnet-20240620": 128000,
-        };
-
-        // Common model prefixes to check
-        const prefixMap = {
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4": 128000,
-          "claude-3-opus": 200000,
-          "claude-3-sonnet": 128000,
-          "claude-3-haiku": 48000,
-          "claude-3.5": 128000,
-          "claude-3-7": 128000,
-        };
-
-        let modelContextLimit = 0;
-
-        // Try exact match first
-        modelContextLimit = modelContextLimits[this.config.modelName] || 0;
-
-        // If no exact match, try prefix matching
-        if (!modelContextLimit) {
-          for (const [prefix, limit] of Object.entries(prefixMap)) {
-            if (this.config.modelName.startsWith(prefix)) {
-              modelContextLimit = limit;
-              if (this.config.verbose) {
-                this.logger.info(
-                  `📚 Matched model ${
-                    this.config.modelName
-                  } to prefix ${prefix} with ${limit.toLocaleString()} context limit`
-                );
-              }
-              break;
-            }
-          }
-        }
-
-        if (!modelContextLimit) {
-          modelContextLimit = 16384; // Default conservative limit
-          this.logger.warn(
-            `⚠️ Unknown model ${
-              this.config.modelName
-            }, using conservative default context limit of ${modelContextLimit.toLocaleString()} tokens`
-          );
-        }
+        const modelContextLimit =
+          MODEL_CONTEXT_LIMITS[this.config.modelName] || 0;
 
         // Calculate current conversation size and determine if we need to reset
         const currentConversationTokens = this.conversation.reduce(
@@ -1197,6 +1086,10 @@ export class TranslationWorkflow {
           role: "user",
           content: prompt,
         });
+
+        // Manage conversation context before API call to prevent token limit issues
+        this.manageConversationContext(this.config.modelName);
+
         messages = this.conversation;
       }
 
@@ -1288,64 +1181,6 @@ export class TranslationWorkflow {
 
         // Get system message
         const systemMessage = this.conversation[0];
-
-        // Define model context limits (same as in manageConversationContext)
-        const modelContextLimits: Record<string, number> = {
-          // OpenAI models with 128K context window
-          "gpt-4.5-preview": 128000,
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4o-mini": 128000,
-          "gpt-4": 128000,
-
-          // Claude models
-          "claude-3-7-sonnet-latest": 128000,
-          "claude-3-opus-20240229": 200000,
-          "claude-3-sonnet-20240229": 128000,
-          "claude-3-haiku-20240307": 48000,
-          "claude-3-5-sonnet-20240620": 128000,
-        };
-
-        // Common model prefixes to check
-        const prefixMap = {
-          "gpt-4.5": 128000,
-          "gpt-4o": 128000,
-          "gpt-4": 128000,
-          "claude-3-opus": 200000,
-          "claude-3-sonnet": 128000,
-          "claude-3-haiku": 48000,
-          "claude-3.5": 128000,
-          "claude-3-7": 128000,
-        };
-
-        let modelContextLimit = 0;
-
-        // Try exact match first
-        modelContextLimit = modelContextLimits[this.config.modelName] || 0;
-
-        // If no exact match, try prefix matching
-        if (!modelContextLimit) {
-          for (const [prefix, limit] of Object.entries(prefixMap)) {
-            if (this.config.modelName.startsWith(prefix)) {
-              modelContextLimit = limit;
-              this.logger.info(
-                `📚 Matched model ${
-                  this.config.modelName
-                } to prefix ${prefix} with ${limit.toLocaleString()} context limit`
-              );
-              break;
-            }
-          }
-        }
-
-        if (!modelContextLimit) {
-          modelContextLimit = 16384; // Default conservative limit
-          this.logger.warn(
-            `⚠️ Unknown model ${
-              this.config.modelName
-            }, using conservative default context limit of ${modelContextLimit.toLocaleString()} tokens for error recovery`
-          );
-        }
 
         // For all models, try to keep more context by removing some middle messages
         if (this.conversation.length > 6) {
@@ -1476,29 +1311,6 @@ export class TranslationWorkflow {
         `   Estimated reading time: ${formatTime(
           this.sourceMetrics.estimatedReadingTime
         )}`
-      )
-    );
-  }
-
-  /**
-   * Display metrics for a translation step
-   */
-  private displayMetrics(label: string, metrics: TranslationMetrics): void {
-    this.logger.log(chalk.cyan(`📏 ${label} metrics:`));
-
-    this.logger.log(
-      chalk.cyan(`   Word count: ${metrics.targetWordCount.toLocaleString()}`)
-    );
-
-    this.logger.log(
-      chalk.cyan(
-        `   Character count: ${metrics.targetCharCount.toLocaleString()}`
-      )
-    );
-
-    this.logger.log(
-      chalk.cyan(
-        `   Estimated reading time: ${formatTime(metrics.estimatedReadingTime)}`
       )
     );
   }
@@ -1656,145 +1468,130 @@ export class TranslationWorkflow {
     this.spinner.fail(`${message} (${elapsedSeconds.toFixed(1)}s)`);
   }
 
+  /**
+   * Manage conversation context to prevent exceeding token limits
+   */
   private manageConversationContext(modelName: string): void {
-    // Skip for external review which uses a fresh conversation
-    if (this.conversation.length <= 2) return;
+    try {
+      // Skip if conversation has fewer than 3 messages (just system + 1-2 exchanges)
+      if (this.conversation.length < 3) {
+        return;
+      }
 
-    // Estimate token count in current conversation
-    let totalEstimatedTokens = 0;
+      // Calculate rough token estimation for current conversation
+      let totalEstimatedTokens = 0;
+      for (const message of this.conversation) {
+        totalEstimatedTokens += Math.ceil(message.content.length / 4);
+      }
 
-    // Rough token estimation (4 chars ≈ 1 token on average)
-    for (const message of this.conversation) {
-      totalEstimatedTokens += Math.ceil(message.content.length / 4);
-    }
+      // Get model's context limit
+      let modelContextLimit = MODEL_CONTEXT_LIMITS[this.config.modelName] || 0;
 
-    // Define model context limits (input + output tokens)
-    // Different from output limits which restrict the size of model responses
-    const modelContextLimits: Record<string, number> = {
-      // OpenAI models with 128K context window
-      "gpt-4.5-preview": 128000,
-      "gpt-4.5": 128000,
-      "gpt-4o": 128000,
-      "gpt-4o-mini": 128000,
-      "gpt-4": 128000,
+      // If no exact match, try prefix matching with common model prefixes
+      if (!modelContextLimit) {
+        const prefixMap: Record<string, number> = {
+          "gpt-4.5": 128000,
+          "gpt-4o": 128000,
+          "gpt-4": 8192,
+          "gpt-3.5": 4096,
+          "claude-3-opus": 200000,
+          "claude-3-sonnet": 200000,
+          "claude-3-haiku": 200000,
+          "claude-3.5": 200000,
+          "claude-3-7": 200000,
+        };
 
-      // Claude models
-      "claude-3-7-sonnet-latest": 128000,
-      "claude-3-opus-20240229": 200000,
-      "claude-3-sonnet-20240229": 128000,
-      "claude-3-haiku-20240307": 48000,
-      "claude-3-5-sonnet-20240620": 128000,
-    };
-
-    // Determine model context limit
-    let modelContextLimit = 0;
-
-    // Try exact match first
-    modelContextLimit = modelContextLimits[modelName] || 0;
-
-    // If no exact match, try prefix matching
-    if (!modelContextLimit) {
-      // Common model prefixes to check
-      const prefixMap = {
-        "gpt-4.5": 128000,
-        "gpt-4o": 128000,
-        "gpt-4": 128000,
-        "claude-3-opus": 200000,
-        "claude-3-sonnet": 128000,
-        "claude-3-haiku": 48000,
-        "claude-3.5": 128000,
-        "claude-3-7": 128000,
-      };
-
-      for (const [prefix, limit] of Object.entries(prefixMap)) {
-        if (modelName.startsWith(prefix)) {
-          modelContextLimit = limit;
-          if (this.config.verbose) {
-            this.logger.info(
-              `📚 Matched model ${modelName} to prefix ${prefix} with ${limit.toLocaleString()} context limit`
-            );
+        for (const [prefix, limit] of Object.entries(prefixMap)) {
+          if (
+            this.config.modelName.toLowerCase().startsWith(prefix.toLowerCase())
+          ) {
+            modelContextLimit = limit;
+            if (this.config.verbose) {
+              this.logger.info(
+                `📚 Matched model ${
+                  this.config.modelName
+                } to prefix ${prefix} with ${limit.toLocaleString()} context limit`
+              );
+            }
+            break;
           }
-          break;
         }
       }
-    }
 
-    // Set a reasonable default if no match found (16K is very conservative)
-    if (!modelContextLimit) {
-      modelContextLimit = 16384;
-      this.logger.warn(
-        `⚠️ Unknown model ${modelName}, using conservative default context limit of ${modelContextLimit.toLocaleString()} tokens`
-      );
-    } else if (this.config.verbose) {
-      this.logger.info(
-        `📚 Using context limit of ${modelContextLimit.toLocaleString()} tokens for model ${modelName}`
-      );
-    }
-
-    // Use different thresholds based on model size
-    // For all models, use 90% threshold for large context models
-    const thresholdPercentage = 0.9;
-    const tokenThreshold = Math.floor(modelContextLimit * thresholdPercentage);
-
-    // Show current token usage in verbose mode
-    if (this.config.verbose) {
-      const usagePercentage = (
-        (totalEstimatedTokens / modelContextLimit) *
-        100
-      ).toFixed(1);
-      this.logger.info(
-        `ℹ️ Current conversation size: ~${totalEstimatedTokens.toLocaleString()} tokens (${usagePercentage}% of ${modelContextLimit.toLocaleString()} context limit)`
-      );
-    }
-
-    // Warning zone: 70% of limit
-    const warningThreshold = Math.floor(modelContextLimit * 0.7);
-    if (
-      totalEstimatedTokens > warningThreshold &&
-      totalEstimatedTokens <= tokenThreshold
-    ) {
-      this.logger.warn(
-        `⚠️ Approaching context limit (est. ${totalEstimatedTokens.toLocaleString()} tokens, ${(
-          (totalEstimatedTokens / modelContextLimit) *
-          100
-        ).toFixed(1)}% of limit). No trimming yet.`
-      );
-    }
-
-    // If approaching limit, trim conversation history
-    if (totalEstimatedTokens > tokenThreshold) {
-      this.logger.warn(
-        `⚠️ Reached token threshold (est. ${totalEstimatedTokens.toLocaleString()} tokens, ${(
-          (totalEstimatedTokens / modelContextLimit) *
-          100
-        ).toFixed(
-          1
-        )}% of ${modelContextLimit.toLocaleString()} context limit). Trimming conversation history...`
-      );
-
-      // Keep system message and more recent exchanges
-      const systemMessage = this.conversation[0];
-
-      // Keep more history since all models have large contexts
-      const messagesToKeep = 10; // 5 exchanges (10 messages)
-      const recentMessages = this.conversation.slice(-messagesToKeep);
-
-      // Reset conversation with system message and recent exchanges
-      this.conversation = [systemMessage, ...recentMessages];
-
-      // Calculate new estimate
-      let newEstimate = 0;
-      for (const message of this.conversation) {
-        newEstimate += Math.ceil(message.content.length / 4);
+      if (!modelContextLimit) {
+        modelContextLimit = MODEL_CONTEXT_LIMITS.default || 16384; // Use default or fallback to 16K
+        this.logger.warn(
+          `⚠️ Unknown model ${
+            this.config.modelName
+          }, using default context limit of ${modelContextLimit.toLocaleString()} tokens`
+        );
       }
 
-      this.logger.info(
-        `ℹ️ Trimmed conversation history to ${
-          this.conversation.length
-        } messages (est. ${newEstimate.toLocaleString()} tokens, ${(
-          (newEstimate / modelContextLimit) *
+      // Use different thresholds based on model size
+      const warningThreshold = Math.floor(modelContextLimit * 0.7);
+      const tokenThreshold = Math.floor(modelContextLimit * 0.9);
+
+      // Show current token usage in verbose mode
+      if (this.config.verbose) {
+        const usagePercentage = (
+          (totalEstimatedTokens / modelContextLimit) *
           100
-        ).toFixed(1)}% of limit)`
+        ).toFixed(1);
+        this.logger.info(
+          `ℹ️ Current conversation size: ~${totalEstimatedTokens.toLocaleString()} tokens (${usagePercentage}% of ${modelContextLimit.toLocaleString()} context limit)`
+        );
+      }
+
+      // Warning zone: 70% of limit
+      if (
+        totalEstimatedTokens > warningThreshold &&
+        totalEstimatedTokens <= tokenThreshold
+      ) {
+        this.logger.warn(
+          `⚠️ Approaching context limit (est. ${totalEstimatedTokens.toLocaleString()} tokens, ${(
+            (totalEstimatedTokens / modelContextLimit) *
+            100
+          ).toFixed(1)}% of limit). No trimming yet.`
+        );
+      }
+
+      // If we exceed threshold (90% of limit), trim conversation
+      if (totalEstimatedTokens > tokenThreshold) {
+        this.logger.warn(
+          `⚠️ Reached token threshold (est. ${totalEstimatedTokens.toLocaleString()} tokens, ${(
+            (totalEstimatedTokens / modelContextLimit) *
+            100
+          ).toFixed(
+            1
+          )}% of ${modelContextLimit.toLocaleString()} context limit). Trimming conversation history...`
+        );
+
+        // Always keep system message (first message) and last two exchanges (4 messages)
+        const systemMessage = this.conversation[0];
+        const recentMessages = this.conversation.slice(-4);
+
+        // Replace conversation with system message + recent messages
+        this.conversation = [systemMessage, ...recentMessages];
+
+        // Recalculate token estimate after trimming
+        let newEstimate = 0;
+        for (const message of this.conversation) {
+          newEstimate += Math.ceil(message.content.length / 4);
+        }
+
+        this.logger.info(
+          `ℹ️ Trimmed conversation history to ${
+            this.conversation.length
+          } messages (est. ${newEstimate.toLocaleString()} tokens, ${(
+            (newEstimate / modelContextLimit) *
+            100
+          ).toFixed(1)}% of limit)`
+        );
+      }
+    } catch (error) {
+      // Don't let token management errors block the workflow
+      this.logger.error(
+        `❌ Error in conversation context management: ${error}`
       );
     }
   }
@@ -2253,5 +2050,22 @@ export class TranslationWorkflow {
       this.logger.warn(`⚠️ Error cleaning content: ${error}`);
       return content; // Return original on error
     }
+  }
+
+  /**
+   * Get the final translation output path
+   */
+  getFinalOutputPath(): string {
+    return this.finalOutputPath;
+  }
+
+  /**
+   * Display human-readable token estimation (helper)
+   */
+  private displayTokenEstimation(text: string): void {
+    const tokens = Math.ceil(text.length / 4);
+    this.logger.info(
+      `📊 Estimated tokens: ${tokens.toLocaleString()} (${text.length.toLocaleString()} chars)`
+    );
   }
 }
