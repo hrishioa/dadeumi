@@ -61,7 +61,7 @@ export class AnthropicProvider implements AiProvider {
 
     const startTime = performance.now();
 
-    const response = await this.client.beta.messages.create({
+    const response = await (this.client as any).beta.messages.create({
       model: options.modelName || "claude-3-7-sonnet-latest",
       max_tokens: options.maxOutputTokens || 100000,
       temperature: options.temperature || 1.0,

@@ -4,34 +4,46 @@
  * This module exports the Daedumi public API for use as a library.
  */
 
-// Import core classes
-import { TranslationWorkflow } from "./core/TranslationWorkflow";
-import {
-  ConversationMessage,
-  TranslationConfig,
-  TranslationMetrics,
-} from "./types";
+// Re-export types
+export interface ConversationMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
-// Export core workflow
+export interface TranslationConfig {
+  sourceLanguage?: string; // Optional, can be auto-detected
+  targetLanguage: string;
+  sourceText: string;
+  outputDir: string;
+  modelName: string;
+  verbose: boolean;
+  maxRetries: number;
+  retryDelay: number;
+  skipExternalReview: boolean;
+  customInstructions?: string;
+  reasoningEffort: "low" | "medium" | "high";
+  maxOutputTokens: number;
+  originalFilename: string; // Used for final output filename
+  originalExtension: string; // Used for final output filename
+  inputPath: string; // For convenience
+}
+
+export interface TranslationMetrics {
+  sourceWordCount: number;
+  targetWordCount: number;
+  sourceCharCount: number;
+  targetCharCount: number;
+  ratio: number;
+  estimatedReadingTime: number;
+}
+
+// Re-export main functionality
 export { TranslationWorkflow } from "./core/TranslationWorkflow";
+export { AiService } from "./services/ai";
+export { XmlProcessor } from "./utils/xml";
+export { Logger } from "./utils/logger";
 
-// Export types
-export {
-  ConversationMessage,
-  TranslationConfig,
-  TranslationMetrics,
-} from "./types";
-
-// Export AI services
-export {
-  AiService,
-  AiProvider,
-  AiRequestOptions,
-  AiResponse,
-  CostResult,
-} from "./services/ai";
-
-// Export utilities
+// Re-export utility functions
 export {
   calculateMetrics,
   calculateMetricsForLanguage,
@@ -44,12 +56,6 @@ export {
   findLatestFile,
   ensureDirectoryExists,
 } from "./utils";
-
-// Export XML processor
-export { XmlProcessor } from "./utils/xml";
-
-// Export logger
-export { Logger } from "./utils/logger";
 
 /**
  * Simple standalone function to translate text
@@ -68,6 +74,7 @@ export async function translate(
 ): Promise<string> {
   // Use current directory as output if not specified
   const outputDir = options?.outputDir || process.cwd();
+  const { TranslationWorkflow } = await import("./core/TranslationWorkflow");
 
   // Create a translation config
   const config: TranslationConfig = {
@@ -98,8 +105,8 @@ export async function translate(
   // Return the translated text from the output file
   const outputPath = `${outputDir}/translation-${targetLanguage}.txt`;
 
-  // Read the output file and return its contents
-  const fs = require("fs");
+  // Use dynamic import for fs to avoid bundling issues
+  const fs = await import("fs");
   if (fs.existsSync(outputPath)) {
     return fs.readFileSync(outputPath, "utf-8");
   }

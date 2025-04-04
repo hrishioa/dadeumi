@@ -21,26 +21,26 @@ describe("FileSystem Operations", () => {
   afterEach(() => {
     if (fs.existsSync(testDir)) {
       // Clean up test files
-      const files = fs.readdirSync(testDir);
-      files.forEach((file) => {
-        try {
-          fs.unlinkSync(path.join(testDir, file));
-        } catch (err) {
-          // Ignore permission errors when cleaning up
-          console.log(
-            `Note: Could not delete test file ${file} - permission error`
-          );
-        }
-      });
-
-      // Remove directory
       try {
-        fs.rmdirSync(testDir);
-      } catch (err) {
-        // Ignore permission errors when removing directory
-        console.log(
-          `Note: Could not remove test directory ${testDir} - permission error`
-        );
+        const files = fs.readdirSync(testDir);
+        for (const file of files) {
+          try {
+            fs.unlinkSync(path.join(testDir, file));
+          } catch (error) {
+            // Ignore errors when removing files
+            console.warn(`Could not remove file: ${file}`);
+          }
+        }
+
+        // Try to remove directory
+        try {
+          fs.rmdirSync(testDir);
+        } catch (error) {
+          // Ignore errors when removing the directory
+          console.warn(`Could not remove directory: ${testDir}`);
+        }
+      } catch (error) {
+        console.warn(`Error during cleanup: ${error.message}`);
       }
     }
   });

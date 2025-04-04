@@ -2,8 +2,7 @@ import {
   AiProvider,
   AiRequestOptions,
   AiResponse,
-  CostResult,
-} from "../../src/services/ai";
+} from "../../src/services/ai/interfaces";
 import { ConversationMessage } from "../../src/types";
 
 /**
@@ -16,7 +15,7 @@ export class MockAiProvider implements AiProvider {
 
   constructor() {
     // Set up some default mock responses for common scenarios
-    this.responses["initial_analysis"] = `<analysis>
+    this.responses["analysis"] = `<analysis>
       This is a mock analysis of the text.
       It discusses the tone, style, and cultural elements.
     </analysis>`;
@@ -80,18 +79,6 @@ export class MockAiProvider implements AiProvider {
     // Find a matching response based on keywords in the prompt
     let responseContent = this.defaultResponse;
 
-    // First, check for specific keywords in the test
-    if (prompt.toLowerCase().includes("initial analysis")) {
-      return {
-        content: this.responses["initial_analysis"],
-        inputTokens: prompt.length / 4,
-        outputTokens: this.responses["initial_analysis"].length / 4,
-        modelName: options.modelName || "mock-model",
-        duration: this.delay / 1000,
-      };
-    }
-
-    // Check other keywords
     for (const [keyword, response] of Object.entries(this.responses)) {
       if (prompt.toLowerCase().includes(keyword.toLowerCase())) {
         responseContent = response;
@@ -140,7 +127,7 @@ export class MockAiService {
     model: string,
     inputTokens: number,
     outputTokens: number
-  ): CostResult {
+  ): { inputCost: number; outputCost: number; totalCost: number } {
     // Use some mock pricing
     const inputCost = (inputTokens / 1_000_000) * 10;
     const outputCost = (outputTokens / 1_000_000) * 30;

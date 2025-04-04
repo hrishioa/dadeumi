@@ -2,18 +2,21 @@
   "name": "daedumi",
   "version": "0.1.0",
   "description": "Daedumi - An AI-powered literary translation workflow inspired by the Korean method of iterative textile refinement",
-  "main": "dist/cli.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "bin": {
-    "daedumi": "dist/cli.js"
+    "daedumi": "./dist/cli.js"
   },
   "scripts": {
-    "build": "bun build ./src/cli.ts --outdir ./dist --target node",
+    "build": "npx tsup && tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --declarationDir dist && mv dist/index.d.ts dist/index.d.mts && cp dist/index.d.mts dist/index.d.cts",
     "start": "bun run ./src/cli.ts",
     "dev": "bun --watch ./src/cli.ts",
     "test": "bun test",
     "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "publint": "npx publint",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "translation",
@@ -28,21 +31,44 @@
     "daedumi",
     "gpt-4",
     "claude-3",
-    "korean"
+    "korean",
+    "workflow",
+    "iterative",
+    "refinement"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "package.json",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/username/daedumi.git"
+    "url": "git+https://github.com/hrishioa/daedumi.git"
   },
   "bugs": {
-    "url": "https://github.com/username/daedumi/issues"
+    "url": "https://github.com/hrishioa/daedumi/issues"
   },
-  "homepage": "https://github.com/username/daedumi",
-  "author": "",
+  "homepage": "https://github.com/hrishioa/daedumi",
+  "author": "Hrishi Olickel <hrishiolickel@gmail.com> (https://olickel.com)",
   "license": "MIT",
+  "private": false,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.18.0",
     "chalk": "^4.1.2",
@@ -53,8 +79,13 @@
     "ora": "^5.4.1"
   },
   "devDependencies": {
+    "@swc/core": "^1.7.26",
     "@types/node": "^20.12.5",
     "bun-types": "latest",
+    "publint": "^0.2.7",
+    "tsup": "^8.0.2",
     "typescript": "^5.4.5"
-  }
+  },
+  "type": "module",
+  "types": "./dist/index.d.cts"
 }

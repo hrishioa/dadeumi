@@ -11,18 +11,18 @@
     "strict": true,
     "strictPropertyInitialization": false,
     "skipLibCheck": true,
+    // "strictNullChecks": true,
     "strictBindCallApply": false,
     "declaration": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "sourceMap": true,
     "outDir": "./dist",
     "noImplicitAny": false,
     "noFallthroughCasesInSwitch": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"]
 }

@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test";
 import { MockAiProvider } from "../mocks/ai-service.mock";
-import { AiRequestOptions } from "../../src/services/ai";
+import { AiRequestOptions } from "../../src/services/ai/interfaces";
 import { ConversationMessage } from "../../src/types";
 
 describe("AI Service", () => {

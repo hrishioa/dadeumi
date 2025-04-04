@@ -1,0 +1,32 @@
+# Source files
+src/
+test/
+old/
+data/
+package_examples/
+examples/
+
+# Development files
+tsconfig.json
+tsup.config.ts
+.git/
+.github/
+.gitignore
+bun.lockb
+*.tsbuildinfo
+
+# Test files
+coverage/
+*.test.ts
+*.spec.ts
+
+# Editor files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*

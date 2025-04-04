@@ -107,7 +107,15 @@ program
           chalk.red("❌ OPENAI_API_KEY environment variable is not set")
         );
         console.log(
-          chalk.yellow("💡 Set it in a .env file or export it in your shell")
+          chalk.yellow(
+            "💡 Set it in a .env file or export it in your shell. For example:"
+          )
+        );
+        console.log(chalk.cyan("  echo 'OPENAI_API_KEY=your-key-here' > .env"));
+        console.log(
+          chalk.yellow(
+            "📘 You can get an API key from: https://platform.openai.com/api-keys"
+          )
         );
         process.exit(1);
       }
@@ -123,6 +131,11 @@ program
         console.log(
           chalk.yellow(
             "ℹ️ ANTHROPIC_API_KEY not found - will use OpenAI for external review"
+          )
+        );
+        console.log(
+          chalk.gray(
+            "  💡 To use Claude for external review, get an API key from: https://console.anthropic.com/"
           )
         );
       }

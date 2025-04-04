@@ -3,7 +3,9 @@ import { AnthropicProvider } from "./anthropic";
 import { ConversationMessage } from "../../types";
 import { pricingData } from "../../config/pricing";
 
-// Direct export of interfaces instead of re-exporting from interfaces.ts
+/**
+ * Response from an AI model call
+ */
 export interface AiResponse {
   content: string;
   inputTokens: number;
@@ -12,6 +14,9 @@ export interface AiResponse {
   duration: number; // in seconds
 }
 
+/**
+ * Options for AI model calls
+ */
 export interface AiRequestOptions {
   modelName: string;
   temperature?: number;
@@ -19,12 +24,26 @@ export interface AiRequestOptions {
   reasoningEffort?: "low" | "medium" | "high";
 }
 
+/**
+ * Interface for AI service providers (OpenAI, Anthropic, etc.)
+ */
 export interface AiProvider {
+  /**
+   * Generate a response from a conversation history
+   */
   generateResponse(
     messages: ConversationMessage[],
     options: AiRequestOptions
   ): Promise<AiResponse>;
+
+  /**
+   * Check if the provider is available (API key exists, etc.)
+   */
   isAvailable(): boolean;
+
+  /**
+   * Get the provider name
+   */
   getProviderName(): string;
 }
 
