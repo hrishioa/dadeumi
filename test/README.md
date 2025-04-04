@@ -1,6 +1,6 @@
-# Daedumi Test Suite
+# Dadeumi Test Suite
 
-This directory contains tests for the Daedumi translation tool.
+This directory contains tests for the Dadeumi translation tool.
 
 ## Running Tests
 

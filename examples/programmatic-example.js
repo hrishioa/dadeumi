@@ -1,14 +1,14 @@
 /**
- * Daedumi Programmatic Usage Examples
+ * Dadeumi Programmatic Usage Examples
  *
- * This file demonstrates various ways to use Daedumi as a library in your applications.
+ * This file demonstrates various ways to use Dadeumi as a library in your applications.
  */
 
 // Import the library (ESM style)
-import { translate, TranslationWorkflow } from "daedumi";
+import { translate, TranslationWorkflow } from "dadeumi";
 
 // For CommonJS:
-// const { translate, TranslationWorkflow } = require('daedumi');
+// const { translate, TranslationWorkflow } = require('dadeumi');
 
 // Basic usage with async/await
 async function basicTranslation() {

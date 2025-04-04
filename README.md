@@ -8,7 +8,7 @@
     <a href="#installation">Installation</a> •
     <a href="#usage">Usage</a> •
     <a href="#features">Features</a> •
-    <a href="#the-daedumi-workflow">Workflow</a> •
+    <a href="#the-dadeumi-workflow">Workflow</a> •
     <a href="#api">API</a> •
     <a href="#faq">FAQ</a>
   </p>
@@ -20,7 +20,7 @@
 
 Dadeumi is a sophisticated AI-powered translation tool designed specifically for literary and creative translations. The name "Dadeumi" is inspired by the traditional Korean textile refinement process, which involves multiple passes of increasingly fine work to create an exceptional final product.
 
-Unlike conventional translation tools that focus on literal, one-pass translations, Daedumi follows a multi-stage workflow that includes analysis, cultural adaptation, and iterative refinement to produce translations that capture not just the words, but the essence, tone, and cultural nuances of the original text.
+Unlike conventional translation tools that focus on literal, one-pass translations, Dadeumi follows a multi-stage workflow that includes analysis, cultural adaptation, and iterative refinement to produce translations that capture not just the words, but the essence, tone, and cultural nuances of the original text.
 
 ## Features
 
@@ -40,16 +40,16 @@ Unlike conventional translation tools that focus on literal, one-pass translatio
 
 ## Installation
 
-Install Daedumi globally to use the CLI tool:
+Install Dadeumi globally to use the CLI tool:
 
 ```bash
-npm install -g daedumi
+npm install -g dadeumi
 ```
 
 Or locally to use as a library:
 
 ```bash
-npm install daedumi
+npm install dadeumi
 ```
 
 ## Usage
@@ -58,25 +58,25 @@ npm install daedumi
 
 ```bash
 # Basic usage
-daedumi -i input.txt -t Japanese -o output-directory
+dadeumi -i input.txt -t Japanese -o output-directory
 
 # With source language specified
-daedumi -i input.txt -s English -t Spanish -o output-directory
+dadeumi -i input.txt -s English -t Spanish -o output-directory
 
 # Use a specific model
-daedumi -i input.txt -t German -m gpt-4o-mini -o output-directory
+dadeumi -i input.txt -t German -m gpt-4o-mini -o output-directory
 
 # Use Claude 3.7 Sonnet for translation (requires ANTHROPIC_API_KEY)
-daedumi -i input.txt -t Korean -m claude-3-7-sonnet-latest -o output-directory
+dadeumi -i input.txt -t Korean -m claude-3-7-sonnet-latest -o output-directory
 
 # Skip external review
-daedumi -i input.txt -t French --skip-external-review -o output-directory
+dadeumi -i input.txt -t French --skip-external-review -o output-directory
 
 # Add custom translation instructions
-daedumi -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
+dadeumi -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
 
 # Running without arguments shows help and pricing information
-daedumi
+dadeumi
 ```
 
 See the [examples directory](./examples/cli-example.md) for more CLI usage examples.
@@ -85,10 +85,10 @@ See the [examples directory](./examples/cli-example.md) for more CLI usage examp
 
 ```javascript
 // ESM
-import { translate } from "daedumi";
+import { translate } from "dadeumi";
 
 // CommonJS
-const { translate } = require("daedumi");
+const { translate } = require("dadeumi");
 
 async function runTranslation() {
   const translatedText = await translate("Your source text here", "Spanish", {
@@ -104,9 +104,9 @@ async function runTranslation() {
 
 For more detailed examples, see the [JavaScript example](./examples/programmatic-example.js) and [TypeScript example](./examples/programmatic-example.ts) in the examples directory.
 
-## The Daedumi Workflow
+## The Dadeumi Workflow
 
-Daedumi's translation process is modeled after the Korean "Daedumi" textile refinement method, which involves multiple steps of increasing refinement:
+Dadeumi's translation process is modeled after the Korean "Dadeumi" textile refinement method, which involves multiple steps of increasing refinement:
 
 1. **Initial Analysis** - Analyzes the source text for tone, style, and cultural elements
 2. **Expression Exploration** - Explores how to express key concepts in the target language
@@ -123,7 +123,7 @@ Daedumi's translation process is modeled after the Korean "Daedumi" textile refi
 
 ### Smart Continuation System
 
-Daedumi features a sophisticated continuation handling system that:
+Dadeumi features a sophisticated continuation handling system that:
 
 - Automatically detects truncated responses from the AI model
 - Efficiently resumes translation from the exact point where it left off
@@ -134,7 +134,7 @@ Daedumi features a sophisticated continuation handling system that:
 
 ### Interruption Recovery
 
-If your translation is interrupted (by Ctrl+C or other means), Daedumi:
+If your translation is interrupted (by Ctrl+C or other means), Dadeumi:
 
 - Saves the current state and all intermediate files
 - On restart, picks up exactly where it left off in the step sequence
@@ -143,7 +143,7 @@ If your translation is interrupted (by Ctrl+C or other means), Daedumi:
 
 ### Context Window Optimization
 
-Daedumi intelligently manages token usage to maximize the capabilities of different AI models:
+Dadeumi intelligently manages token usage to maximize the capabilities of different AI models:
 
 - Automatically detects the correct context window size for each model (e.g., 128K for GPT-4o, 200K for Claude)
 - Only trims conversation history when necessary (at 90% of window capacity)
@@ -175,7 +175,7 @@ async function translate(
 For more advanced usage, you can use the `TranslationWorkflow` class directly:
 
 ```typescript
-import { TranslationWorkflow, TranslationConfig } from "daedumi";
+import { TranslationWorkflow, TranslationConfig } from "dadeumi";
 
 const config: TranslationConfig = {
   sourceText: "Your text here",
@@ -189,7 +189,7 @@ await workflow.execute();
 
 ## Environment Variables
 
-Daedumi requires API keys to work:
+Dadeumi requires API keys to work:
 
 - `OPENAI_API_KEY` - Required for using OpenAI models (default)
 - `ANTHROPIC_API_KEY` - Optional, for using Claude models or for external review
@@ -198,13 +198,13 @@ You can set these in a `.env` file in your project root.
 
 ## FAQ
 
-**Q: What makes Daedumi different from other translation tools?**
+**Q: What makes Dadeumi different from other translation tools?**
 
-A: Daedumi employs a multi-stage, iterative refinement process inspired by traditional Korean textile techniques. Unlike other tools that produce single-pass translations, Daedumi analyzes, explores, and refines translations through multiple stages for higher quality results.
+A: Dadeumi employs a multi-stage, iterative refinement process inspired by traditional Korean textile techniques. Unlike other tools that produce single-pass translations, Dadeumi analyzes, explores, and refines translations through multiple stages for higher quality results.
 
-**Q: What kinds of texts work best with Daedumi?**
+**Q: What kinds of texts work best with Dadeumi?**
 
-A: Daedumi excels with creative, literary, and nuanced texts where preserving tone, style, and cultural elements is important. It's ideal for literature, marketing copy, poetry, and culturally-rich content.
+A: Dadeumi excels with creative, literary, and nuanced texts where preserving tone, style, and cultural elements is important. It's ideal for literature, marketing copy, poetry, and culturally-rich content.
 
 **Q: Which models work best?**
 
@@ -214,13 +214,13 @@ A: For high-quality translations, we recommend using GPT-4o or Claude 3.7 Sonnet
 
 A: Yes, use the `--instructions` parameter or `customInstructions` option to specify tone, audience, formality level, or other stylistic preferences.
 
-**Q: How does Daedumi handle very long texts?**
+**Q: How does Dadeumi handle very long texts?**
 
-A: Daedumi includes a robust continuation system that detects when a translation is truncated and seamlessly continues it. The system intelligently manages conversation context to make optimal use of each model's token limits, allowing for translation of very long documents.
+A: Dadeumi includes a robust continuation system that detects when a translation is truncated and seamlessly continues it. The system intelligently manages conversation context to make optimal use of each model's token limits, allowing for translation of very long documents.
 
 **Q: What happens if my translation is interrupted?**
 
-A: Daedumi saves intermediate results at each step. If interrupted, simply run the same command again and it will resume from where it left off, without skipping or repeating steps.
+A: Dadeumi saves intermediate results at each step. If interrupted, simply run the same command again and it will resume from where it left off, without skipping or repeating steps.
 
 ## License
 

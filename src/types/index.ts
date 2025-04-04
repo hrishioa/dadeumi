@@ -1,5 +1,5 @@
 /**
- * Core type definitions for Daedumi translation workflow
+ * Core type definitions for Dadeumi translation workflow
  */
 
 /**

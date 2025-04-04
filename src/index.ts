@@ -1,7 +1,7 @@
 /**
- * Daedumi - AI-powered literary translation workflow
+ * Dadeumi - AI-powered literary translation workflow
  *
- * This module exports the Daedumi public API for use as a library.
+ * This module exports the Dadeumi public API for use as a library.
  */
 
 // Re-export types

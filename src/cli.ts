@@ -25,11 +25,11 @@ function printModelSuggestions() {
 
   console.log(chalk.yellow("\n  Examples:"));
   console.log(
-    chalk.yellow("  daedumi -i input.txt -o output -t Spanish -m gpt-4o")
+    chalk.yellow("  dadeumi -i input.txt -o output -t Spanish -m gpt-4o")
   );
   console.log(
     chalk.yellow(
-      "  daedumi -i input.txt -o output -t Japanese -m claude-3-7-sonnet-latest"
+      "  dadeumi -i input.txt -o output -t Japanese -m claude-3-7-sonnet-latest"
     )
   );
 
@@ -42,7 +42,7 @@ function printModelSuggestions() {
 
 // Function to display pricing information
 function displayPricingInfo() {
-  console.log(chalk.cyan.bold("\n📊 Daedumi Supported Models and Pricing\n"));
+  console.log(chalk.cyan.bold("\n📊 Dadeumi Supported Models and Pricing\n"));
 
   console.log(chalk.cyan("OpenAI Models:"));
   console.log(chalk.cyan("─────────────────────────────────────────────────"));
@@ -92,8 +92,8 @@ const program = new Command();
 
 // Configure the program
 program
-  .name("daedumi")
-  .description("Daedumi - AI-powered literary translation workflow")
+  .name("dadeumi")
+  .description("Dadeumi - AI-powered literary translation workflow")
   .version("0.1.0")
   .option("-i, --input <path>", "Path to the input file")
   .option("-o, --output <directory>", "Directory to save final translation")
@@ -128,9 +128,9 @@ program
   .addHelpText(
     "beforeAll",
     `
-📚 Daedumi - AI-powered literary translation workflow
+📚 Dadeumi - AI-powered literary translation workflow
 
-Daedumi creates high-quality literary translations using AI, employing a
+Dadeumi creates high-quality literary translations using AI, employing a
 multi-step workflow inspired by the Korean textile refinement process.
 `
   )
@@ -146,7 +146,7 @@ program.action(async (options) => {
   if (!options.input || !options.output || !options.target) {
     console.log(
       chalk.cyan.bold(
-        "\n📚 Daedumi - AI-powered literary translation workflow\n"
+        "\n📚 Dadeumi - AI-powered literary translation workflow\n"
       )
     );
     console.log(chalk.red("❌ Missing required options. Please provide:"));
@@ -159,16 +159,16 @@ program.action(async (options) => {
     console.log(chalk.yellow("\nUsage:"));
     console.log(
       chalk.yellow(
-        "  daedumi -i input.txt -o output-dir -t TARGET_LANGUAGE [options]\n"
+        "  dadeumi -i input.txt -o output-dir -t TARGET_LANGUAGE [options]\n"
       )
     );
     console.log(chalk.yellow("Examples:"));
     console.log(
-      chalk.yellow("  daedumi -i story.txt -o translations -t Spanish")
+      chalk.yellow("  dadeumi -i story.txt -o translations -t Spanish")
     );
     console.log(
       chalk.yellow(
-        "  daedumi -i poem.txt -o translations -t Japanese -m gpt-4o-mini"
+        "  dadeumi -i poem.txt -o translations -t Japanese -m gpt-4o-mini"
       )
     );
 
@@ -347,7 +347,7 @@ program.action(async (options) => {
     }
 
     // Log startup information
-    console.log(chalk.cyan("🚀 Starting Daedumi translation workflow"));
+    console.log(chalk.cyan("🚀 Starting Dadeumi translation workflow"));
     console.log(chalk.cyan(`📂 Output directory: ${options.output}`));
 
     // Create translation configuration
@@ -393,11 +393,11 @@ program.action(async (options) => {
 // Show help if no arguments provided
 if (process.argv.length <= 2) {
   console.log(
-    chalk.cyan.bold("\n📚 Daedumi - AI-powered literary translation workflow\n")
+    chalk.cyan.bold("\n📚 Dadeumi - AI-powered literary translation workflow\n")
   );
   console.log(
     chalk.cyan(
-      "Daedumi creates high-quality literary translations using AI, employing a"
+      "Dadeumi creates high-quality literary translations using AI, employing a"
     )
   );
   console.log(
@@ -409,22 +409,22 @@ if (process.argv.length <= 2) {
   console.log(chalk.yellow("\nUsage:"));
   console.log(
     chalk.yellow(
-      "  daedumi -i input.txt -o output-dir -t TARGET_LANGUAGE [options]\n"
+      "  dadeumi -i input.txt -o output-dir -t TARGET_LANGUAGE [options]\n"
     )
   );
 
   console.log(chalk.yellow("Examples:"));
   console.log(
-    chalk.yellow("  daedumi -i story.txt -o translations -t Spanish")
+    chalk.yellow("  dadeumi -i story.txt -o translations -t Spanish")
   );
   console.log(
     chalk.yellow(
-      "  daedumi -i poem.txt -o translations -t Japanese -m gpt-4o-mini"
+      "  dadeumi -i poem.txt -o translations -t Japanese -m gpt-4o-mini"
     )
   );
   console.log(
     chalk.yellow(
-      "  daedumi -i article.md -o translations -t French -m claude-3-7-sonnet-latest\n"
+      "  dadeumi -i article.md -o translations -t French -m claude-3-7-sonnet-latest\n"
     )
   );
 
@@ -432,7 +432,7 @@ if (process.argv.length <= 2) {
   displayPricingInfo();
 
   console.log(chalk.yellow("\nFor more options:"));
-  console.log(chalk.yellow("  daedumi --help\n"));
+  console.log(chalk.yellow("  dadeumi --help\n"));
   process.exit(0);
 }
 

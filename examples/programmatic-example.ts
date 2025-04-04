@@ -1,10 +1,10 @@
 /**
- * Daedumi TypeScript Usage Examples
+ * Dadeumi TypeScript Usage Examples
  *
- * This file demonstrates how to use Daedumi in a TypeScript project.
+ * This file demonstrates how to use Dadeumi in a TypeScript project.
  */
 
-import { translate, TranslationWorkflow, TranslationConfig } from "daedumi";
+import { translate, TranslationWorkflow, TranslationConfig } from "dadeumi";
 import * as fs from "fs";
 import * as path from "path";
 
