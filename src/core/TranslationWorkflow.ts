@@ -309,7 +309,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Initial Analysis");
-        this.logger.success("✅ Initial analysis completed");
+        this.spinner.succeed("✅ Initial analysis completed");
+        this.logger.success("Initial analysis saved to intermediates");
       }
 
       // Step 2: Expression Exploration
@@ -342,7 +343,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Expression Exploration");
-        this.logger.success("✅ Expression exploration completed");
+        this.spinner.succeed("✅ Expression exploration completed");
+        this.logger.success("Expression exploration saved to intermediates");
       }
 
       // Step 3: Cultural Adaptation
@@ -373,7 +375,10 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Cultural Adaptation Discussion");
-        this.logger.success("✅ Cultural adaptation discussion completed");
+        this.spinner.succeed("✅ Cultural adaptation discussion completed");
+        this.logger.success(
+          "Cultural adaptation discussion saved to intermediates"
+        );
       }
 
       // Step 4: Title & Inspiration Exploration
@@ -402,7 +407,10 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Title & Inspiration Exploration");
-        this.logger.success("✅ Title & inspiration exploration completed");
+        this.spinner.succeed("✅ Title & inspiration exploration completed");
+        this.logger.success(
+          "Title & inspiration exploration saved to intermediates"
+        );
       }
 
       // Step 5: First Translation
@@ -446,7 +454,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("First Translation");
-        this.logger.success("✅ First translation draft completed");
+        this.spinner.succeed("✅ First translation draft completed");
+        this.logger.success("First translation draft saved to intermediates");
       }
 
       // Step 6: Self-critique & First Refinement
@@ -497,7 +506,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Self-Critique & First Refinement");
-        this.logger.success("✅ Self-critique & first refinement completed");
+        this.spinner.succeed("✅ Self-critique & first refinement completed");
+        this.logger.success("Improved translation saved to intermediates");
       }
 
       // Step 7: Second Refinement
@@ -551,7 +561,10 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Second Refinement");
-        this.logger.success("✅ Second refinement completed");
+        this.spinner.succeed("✅ Second refinement completed");
+        this.logger.success(
+          "Further improved translation saved to intermediates"
+        );
       }
 
       // Step 8: Final Translation
@@ -602,7 +615,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Final Translation");
-        this.logger.success("✅ Final translation completed");
+        this.spinner.succeed("✅ Final translation completed");
+        this.logger.success("Final translation saved to intermediates");
       }
 
       // Step 9: External Review (optional)
@@ -646,7 +660,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("External Review");
-        this.logger.success("✅ External review completed");
+        this.spinner.succeed("✅ External review completed");
+        this.logger.success("External review saved to intermediates");
       }
 
       // Step 10: Final Refinement
@@ -708,7 +723,8 @@ export class TranslationWorkflow {
 
         // Add to translation steps
         this.translationSteps.push("Final Refinement");
-        this.logger.success("✅ Final refinement completed");
+        this.spinner.succeed("✅ Final refinement completed");
+        this.logger.success("Refined final translation saved to intermediates");
 
         // Save the final output
         saveText(this.finalOutputPath, refinedFinalTranslation);
@@ -746,7 +762,13 @@ export class TranslationWorkflow {
       this.logger.log(
         chalk.green(`📄 Final output saved to: ${this.finalOutputPath}`)
       );
+
+      // Make sure to stop the spinner when we're done
+      this.spinner.stop();
     } catch (error) {
+      // Make sure to stop the spinner on error
+      this.spinner.stop();
+
       // Save whatever we have so far
       this.saveLatestTranslationOnError();
       throw error;
@@ -966,6 +988,8 @@ export class TranslationWorkflow {
         return this.callAiService(prompt, retryCount + 1, isExternalReview);
       }
 
+      // Make sure to stop the spinner when maximum retries are reached
+      this.spinner.stop();
       this.logger.error("❌ Error calling AI API after maximum retries");
       throw error;
     }

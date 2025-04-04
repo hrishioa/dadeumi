@@ -61,36 +61,45 @@ export class AnthropicProvider implements AiProvider {
 
     const startTime = performance.now();
 
-    const response = await (this.client as any).beta.messages.create({
-      model: options.modelName || "claude-3-7-sonnet-latest",
-      max_tokens: options.maxOutputTokens || 100000,
-      temperature: options.temperature || 1.0,
-      system: systemMessage,
-      messages: formattedMessages,
-      thinking: {
-        type: "enabled",
-        budget_tokens: 32000, // Use a large budget for reasoning
-      },
-      betas: ["output-128k-2025-02-19"], // Enable extended output
-    });
+    try {
+      // Use the standard messages.create method instead of beta
+      const response = await this.client.messages.create({
+        model: options.modelName || "claude-3-7-sonnet-latest",
+        max_tokens: options.maxOutputTokens || 100000,
+        temperature: options.temperature || 1.0,
+        system: systemMessage,
+        messages: formattedMessages,
+      });
 
-    const endTime = performance.now();
+      const endTime = performance.now();
 
-    let content = "";
-    if (
-      response.content &&
-      response.content.length > 0 &&
-      "text" in response.content[0]
-    ) {
-      content = response.content[0].text;
+      let content = "";
+      if (
+        response.content &&
+        response.content.length > 0 &&
+        "text" in response.content[0]
+      ) {
+        content = response.content[0].text;
+      }
+
+      return {
+        content,
+        inputTokens: response.usage?.input_tokens || 0,
+        outputTokens: response.usage?.output_tokens || 0,
+        modelName: options.modelName || "claude-3-7-sonnet-latest",
+        duration: (endTime - startTime) / 1000,
+      };
+    } catch (error: any) {
+      console.error("Anthropic API error:", error?.message || error);
+
+      // Log more detailed error information to help with debugging
+      if (error?.status) {
+        console.error(
+          `Status: ${error.status}, Type: ${error?.error?.type || "unknown"}`
+        );
+      }
+
+      throw error;
     }
-
-    return {
-      content,
-      inputTokens: response.usage?.input_tokens || 0,
-      outputTokens: response.usage?.output_tokens || 0,
-      modelName: options.modelName || "claude-3-7-sonnet-latest",
-      duration: (endTime - startTime) / 1000,
-    };
   }
 }

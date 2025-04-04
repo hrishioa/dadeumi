@@ -54,19 +54,25 @@ npm install daedumi
 
 ```bash
 # Basic usage
-daedumi -i input.txt -t Japanese -o output-directory
+daedumi translate -i input.txt -t Japanese -o output-directory
 
 # With source language specified
-daedumi -i input.txt -s English -t Spanish -o output-directory
+daedumi translate -i input.txt -s English -t Spanish -o output-directory
 
 # Use a specific model
-daedumi -i input.txt -t German -m gpt-4o-mini -o output-directory
+daedumi translate -i input.txt -t German -m gpt-4o-mini -o output-directory
+
+# Use Claude 3.7 Sonnet for translation (requires ANTHROPIC_API_KEY)
+daedumi translate -i input.txt -t Korean -m claude-3-7-sonnet-latest -o output-directory
 
 # Skip external review
-daedumi -i input.txt -t French --skip-external-review -o output-directory
+daedumi translate -i input.txt -t French --skip-external-review -o output-directory
 
 # Add custom translation instructions
-daedumi -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
+daedumi translate -i input.txt -t Korean --instructions "Translate with a formal tone suitable for academic audiences" -o output-directory
+
+# View pricing information
+daedumi pricing
 ```
 
 See the [examples directory](./examples/cli-example.md) for more CLI usage examples.
