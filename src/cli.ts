@@ -200,23 +200,32 @@ program.action(async (options) => {
     // --- Model-Specific Adjustments ---
     let maxOutputTokens = parseInt(options.maxOutputTokens);
 
-    // Define model-specific limits
-    const modelLimits: Record<string, number> = {
+    // Define model-specific OUTPUT token limits (max tokens per response)
+    // Note: These are different from context limits (which are larger)
+    const outputTokenLimits: Record<string, number> = {
+      // OpenAI models - 16K output limit, 128K context
       "gpt-4.5-preview": 16384,
       "gpt-4o": 16384,
       "gpt-4o-mini": 16384,
+      "gpt-4": 8192,
+
+      // Claude models - larger output limits
       "claude-3-7-sonnet-latest": 128000,
+      "claude-3-opus-20240229": 128000,
+      "claude-3-sonnet-20240229": 128000,
+      "claude-3-haiku-20240307": 32768,
+      "claude-3-5-sonnet-20240620": 128000,
     };
 
     // Check for limits by exact match or prefix
     let modelLimit: number | undefined;
 
     // Try exact match first
-    modelLimit = modelLimits[options.model];
+    modelLimit = outputTokenLimits[options.model];
 
     // If no exact match, try prefix matching
     if (!modelLimit) {
-      for (const [modelPrefix, limit] of Object.entries(modelLimits)) {
+      for (const [modelPrefix, limit] of Object.entries(outputTokenLimits)) {
         if (options.model.startsWith(modelPrefix)) {
           modelLimit = limit;
           break;

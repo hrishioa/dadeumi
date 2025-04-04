@@ -28,7 +28,9 @@ staying faithful to the source text's meaning and intention${
       sourceLanguage
         ? ""
         : " (you may need to infer the source language from the text provided)"
-    }.\n`;
+    }.
+
+CRITICAL: You must ALWAYS translate the COMPLETE text without omitting any content. Ensure your translations include EVERY part of the source text from beginning to end. If the text is lengthy, you must still translate it in its entirety.\n`;
 
     // Only include the relevant XML tags based on the current step
     if (currentStep) {
@@ -48,24 +50,24 @@ staying faithful to the source text's meaning and intention${
           systemPrompt += `- <title_options>your title suggestions here</title_options>\n`;
           break;
         case "first_translation":
-          systemPrompt += `- <first_translation>your translation here</first_translation>\n`;
+          systemPrompt += `- <first_translation>your COMPLETE translation here</first_translation>\n`;
           break;
         case "self_critique":
           systemPrompt += `- <critique>your critique here</critique>\n`;
-          systemPrompt += `- <improved_translation>your improved translation here</improved_translation>\n`;
+          systemPrompt += `- <improved_translation>your COMPLETE improved translation here</improved_translation>\n`;
           break;
         case "further_refinement":
           systemPrompt += `- <second_critique>your second critique here</second_critique>\n`;
-          systemPrompt += `- <further_improved_translation>your further improved translation here</further_improved_translation>\n`;
+          systemPrompt += `- <further_improved_translation>your COMPLETE further improved translation here</further_improved_translation>\n`;
           break;
         case "final_translation":
-          systemPrompt += `- <final_translation>your final translation here</final_translation>\n`;
+          systemPrompt += `- <final_translation>your COMPLETE final translation here</final_translation>\n`;
           break;
         case "external_review":
           systemPrompt += `- <external_review>your external review here</external_review>\n`;
           break;
         case "apply_feedback":
-          systemPrompt += `- <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+          systemPrompt += `- <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
           break;
         default:
           // If step is not recognized, include all tags as before
@@ -74,15 +76,15 @@ staying faithful to the source text's meaning and intention${
 - Expression exploration: <expression_exploration>your exploration here</expression_exploration>
 - Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
 - Title options: <title_options>your title suggestions here</title_options>
-- First draft translation: <first_translation>your translation here</first_translation>
+- First draft translation: <first_translation>your COMPLETE translation here</first_translation>
 - Critique: <critique>your critique here</critique>
-- Improved translation: <improved_translation>your improved translation here</improved_translation>
+- Improved translation: <improved_translation>your COMPLETE improved translation here</improved_translation>
 - Second critique: <second_critique>your second critique here</second_critique>
-- Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
+- Further improved translation: <further_improved_translation>your COMPLETE further improved translation here</further_improved_translation>
 - Comprehensive review: <review>your comprehensive review here</review>
-- Final translation: <final_translation>your final translation here</final_translation>
+- Final translation: <final_translation>your COMPLETE final translation here</final_translation>
 - External review: <external_review>your external review here</external_review>
-- Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
       }
     } else {
       // If no specific step is provided, include all tags as before
@@ -91,15 +93,15 @@ staying faithful to the source text's meaning and intention${
 - Expression exploration: <expression_exploration>your exploration here</expression_exploration>
 - Cultural discussion: <cultural_discussion>your discussion here</cultural_discussion>
 - Title options: <title_options>your title suggestions here</title_options>
-- First draft translation: <first_translation>your translation here</first_translation>
+- First draft translation: <first_translation>your COMPLETE translation here</first_translation>
 - Critique: <critique>your critique here</critique>
-- Improved translation: <improved_translation>your improved translation here</improved_translation>
+- Improved translation: <improved_translation>your COMPLETE improved translation here</improved_translation>
 - Second critique: <second_critique>your second critique here</second_critique>
-- Further improved translation: <further_improved_translation>your further improved translation here</further_improved_translation>
+- Further improved translation: <further_improved_translation>your COMPLETE further improved translation here</further_improved_translation>
 - Comprehensive review: <review>your comprehensive review here</review>
-- Final translation: <final_translation>your final translation here</final_translation>
+- Final translation: <final_translation>your COMPLETE final translation here</final_translation>
 - External review: <external_review>your external review here</external_review>
-- Refined final translation: <refined_final_translation>your refined final translation here</refined_final_translation>\n`;
+- Refined final translation: <refined_final_translation>your COMPLETE refined final translation here</refined_final_translation>\n`;
     }
 
     systemPrompt += `Your tone should be conversational and thoughtful, as if you're discussing the translation process with a colleague.
@@ -109,7 +111,7 @@ ${targetLanguage} speakers.
 Work through the translation step by step, maintaining the voice and essence of the original while making it
 feel naturally written in ${targetLanguage}.
 
-Your output length is unlocked so you can do at least 10K tokens in the output.`;
+Your output length is unlocked so you can produce at least 30K tokens in your output if needed - ensure you NEVER truncate or omit any part of the text.`;
 
     if (customInstructions) {
       systemPrompt += `\n\nAdditional instructions for this translation:\n${customInstructions}`;
@@ -208,10 +210,12 @@ Here is the source text:
 ${sourceText}
 </source_text>
 
-Based on our previous discussions about tone, style, cultural nuances, and specific expressions, please translate the full text.
+Based on our previous discussions about tone, style, cultural nuances, and specific expressions, please translate the COMPLETE text.
 Aim to preserve the original's meaning, impact, and feeling while making it sound natural in ${targetLanguage}.
 
-Please place your translation within <first_translation> tags.`) as PromptTemplate,
+IMPORTANT: You must translate the ENTIRE text without omitting any paragraphs, sentences, or content. Ensure your translation is complete from beginning to end. If the text is lengthy, make sure you include everything.
+
+Please place your complete translation within <first_translation> tags.`) as PromptTemplate,
 
   selfCritiqueAndRefinement: ((
     targetLanguage: string,
@@ -240,9 +244,12 @@ Could you analyze aspects like:
 - The preservation of the original's tone and voice
 - Poetic quality and literary devices
 - Overall readability and naturalness in ${targetLanguage}
+- COMPLETENESS: Check if any sentences or paragraphs were omitted from the original text
 
 After providing your critique, please offer an improved version of the translation that addresses
 the issues you identified. Providing the complete improved translation allows for easier comparison and usability.
+
+IMPORTANT: Ensure your improved translation includes EVERY part of the source text with nothing omitted. Double-check that no content is missing.
 
 Please put your critique in <critique> tags and your complete improved translation in <improved_translation> tags.`) as PromptTemplate,
 
@@ -269,11 +276,14 @@ I'd like you to review this translation again, but this time paying special atte
 
 1. Naturalness: Does it flow as if it were originally written in ${targetLanguage}?
 2. Fidelity: Does it capture the full meaning and nuance of the original?
-3. Impact: Does it have the same emotional and rhetorical effect as the original?
-4. Consistency: Are terms, tone, and style consistent throughout?
-5. Cultural resonance: Would it connect with native ${targetLanguage} speakers on a cultural level?
+3. Completeness: Is EVERY part of the source text included in the translation?
+4. Impact: Does it have the same emotional and rhetorical effect as the original?
+5. Consistency: Are terms, tone, and style consistent throughout?
+6. Cultural resonance: Would it connect with native ${targetLanguage} speakers on a cultural level?
 
 After your critique, please provide a further improved version that addresses any issues you find.
+
+IMPORTANT: Verify that no content has been omitted. Your translation must include EVERY part of the original text from start to finish.
 
 Please put your critique in <second_critique> tags and your improved translation in <further_improved_translation> tags.`) as PromptTemplate,
 
@@ -303,8 +313,11 @@ Let's do one final pass to perfect this translation. Consider all the aspects we
 - Natural expression in ${targetLanguage}
 - Preservation of tone, style, and voice
 - Literary quality
+- COMPLETENESS: Ensure that EVERY part of the source text is translated
 
 After your review, please provide what you consider to be the final, polished translation.
+
+CRITICAL: Your final translation MUST include the ENTIRE source text with no omissions whatsoever. Double-check that you have translated everything completely from beginning to end.
 
 Please put your final translation in <final_translation> tags.`) as PromptTemplate,
 
@@ -348,9 +361,9 @@ Please consider aspects like:
 - Cultural adaptation and resonance
 - Preservation of literary devices, metaphors, and style
 - Overall effectiveness as a ${targetLanguage} text
+- COMPLETENESS: Has the entire source text been translated? Or are there missing parts?
 
-Please provide your detailed critique and suggestions for potential improvements.
-Remember that constructive criticism helps create better translations.
+IMPORTANT: Please explicitly check if any paragraphs, sentences, or sections from the source text are missing in the translation. If you find any omissions, highlight them clearly at the beginning of your review.
 
 Please format your review within <external_review> tags.`) as PromptTemplate,
 
