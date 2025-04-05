@@ -43,6 +43,6 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# Daedumi specific
+# Dadeumi specific
 *-intermediates/
 .translation-intermediates/

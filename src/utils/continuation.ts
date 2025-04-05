@@ -543,3 +543,16 @@ function findBestMatchPoint(
   // No good match found
   return null;
 }
+
+/**
+ * Creates a simple "please continue" prompt that preserves the existing conversation context
+ * @param targetLastLine The last line of the truncated response to continue from
+ * @returns A prompt asking the model to continue from where it left off
+ */
+export function createSimpleContinuationPrompt(targetLastLine: string): string {
+  return `Your response appeared to be cut off. Please continue your translation from where you left off, starting at this point:
+
+"${targetLastLine.trim()}"
+
+Please continue in the same style, tone, and approach as you were using before. Don't repeat what you've already translated - just continue from exactly where you left off.`;
+}

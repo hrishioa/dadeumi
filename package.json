@@ -1,6 +1,6 @@
 {
   "name": "dadeumi",
-  "version": "0.8.0",
+  "version": "0.1.0",
   "description": "Dadeumi - An AI-powered literary translation workflow inspired by the Korean method of iterative textile refinement",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -73,7 +73,6 @@
     "@anthropic-ai/sdk": "^0.18.0",
     "chalk": "^4.1.2",
     "commander": "^12.0.0",
-    "daedumi": "^0.8.0",
     "dotenv": "^16.4.5",
     "fast-xml-parser": "^4.3.5",
     "openai": "^4.32.0",

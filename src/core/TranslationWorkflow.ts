@@ -24,6 +24,7 @@ import {
   calculateChange,
   checkTranslationCompletion,
   createContinuationPrompt,
+  createSimpleContinuationPrompt,
   backupPartialTranslation,
   combineTranslation,
   removeUnpairedXmlTags,
@@ -1656,257 +1657,258 @@ export class TranslationWorkflow {
     tag: string,
     forceCheck = false
   ): Promise<string> {
-    // First check if the translation is complete (unless we're forcing continuation)
-    const completionCheck = await checkTranslationCompletion(
-      sourceText,
-      translationText,
-      this.config.verbose
-    );
-
-    if (!forceCheck && (!completionCheck || !completionCheck.continue)) {
-      // Translation is complete or check failed - return original
-      // Reset continuation tracking
-      this.continuationAttempts = 0;
-      this.previousTranslationLength = 0;
-      this.previousSourceLine = "";
-      return translationText;
-    }
-
-    // Check if we're making minimal progress
-    if (translationText.length === this.previousTranslationLength) {
-      this.continuationAttempts++;
-      // If we've tried 3 times with no change, break the loop
-      if (this.continuationAttempts >= 3) {
-        this.logger.warn(
-          `⚠️ Breaking continuation loop after ${this.continuationAttempts} attempts with no progress`
-        );
-        this.continuationAttempts = 0;
-        this.previousTranslationLength = 0;
-        this.previousSourceLine = "";
-        return translationText;
-      }
-    } else if (
-      translationText.length - this.previousTranslationLength <
-        this.minimumMeaningfulProgress &&
-      this.previousTranslationLength > 0
-    ) {
-      // We're making very little progress (less than minimumMeaningfulProgress chars)
-      this.continuationAttempts++;
-      if (this.continuationAttempts >= 2) {
-        this.logger.warn(
-          `⚠️ Breaking continuation loop after ${
-            this.continuationAttempts
-          } attempts with minimal progress (only ${
-            translationText.length - this.previousTranslationLength
-          } chars added)`
-        );
-        this.continuationAttempts = 0;
-        this.previousTranslationLength = 0;
-        this.previousSourceLine = "";
-        return translationText;
-      }
-    } else {
-      // Reset counter when making good progress
-      this.continuationAttempts = 0;
-    }
-
-    // Store current length for next comparison
-    this.previousTranslationLength = translationText.length;
-
-    // Determine if we need continuation
-    const needsContinuation =
-      forceCheck || (completionCheck && completionCheck.continue);
-    if (!needsContinuation) {
-      return translationText;
-    }
-
-    // We need to continue translation - log information
-    this.logger.warn(
-      `⚠️ Translation appears to be incomplete${
-        forceCheck ? " (forced check due to truncation)" : ""
-      }. Attempting to continue from identified point.`
-    );
-
-    // Create backup of partial translation
-    const backupPath = backupPartialTranslation(translationPath);
-    if (backupPath) {
-      this.logger.info(`📋 Backed up partial translation to: ${backupPath}`);
-    }
-
-    // For forced check with no completion data, use last paragraph as continuation point
-    let targetLastLine = "";
-    let sourceLine = "";
-
-    if (
-      forceCheck &&
-      (!completionCheck ||
-        !completionCheck.targetLastLine ||
-        !completionCheck.sourceLine)
-    ) {
-      // Find the last paragraph of the translated text
-      const paragraphs = translationText.split(/\n\n+/);
-      if (paragraphs.length > 0) {
-        targetLastLine = paragraphs[paragraphs.length - 1].trim();
-        this.logger.info(
-          `📝 Using last paragraph as continuation point for forced continuation`
-        );
-      } else {
-        targetLastLine = translationText.split("\n").pop() || "";
-        this.logger.info(
-          `📝 Using last line as continuation point for forced continuation`
-        );
-      }
-
-      // Use approximate source position - midpoint if we can't determine
-      const sourceLines = sourceText.split("\n");
-      const midpoint = Math.floor(sourceLines.length / 2);
-      sourceLine = sourceLines[midpoint] || "";
-    } else {
-      // Use the identified continuation points
-      targetLastLine = completionCheck?.targetLastLine || "";
-      sourceLine = completionCheck?.sourceLine || "";
-    }
-
-    // Check if we're trying to continue from the same source line as before
-    if (sourceLine && sourceLine === this.previousSourceLine) {
-      this.continuationAttempts++;
-
-      // If we've tried to continue from the same source line twice, assume we're at the end
-      if (this.continuationAttempts >= 2) {
-        this.logger.warn(
-          `⚠️ Breaking continuation loop: detected same source line "${sourceLine.substring(
-            0,
-            30
-          )}..." in consecutive attempts`
-        );
-        this.logger.info(
-          `📝 This likely means we've reached the end of the document or the model can't make further progress`
-        );
-
-        // Reset tracking variables
-        this.continuationAttempts = 0;
-        this.previousTranslationLength = 0;
-        this.previousSourceLine = "";
-
-        return translationText;
-      }
-    } else {
-      // Different source line, reset attempt counter for this check
-      this.continuationAttempts = 0;
-    }
-
-    // Store current source line for next comparison
-    this.previousSourceLine = sourceLine;
-
-    // Generate continuation prompt
-    const continuationPrompt = createContinuationPrompt(
-      sourceText,
-      translationText,
-      targetLastLine,
-      sourceLine
-    );
-
-    // Update system prompt for continuation
-    const systemPrompt = prompts.system(
-      this.config.targetLanguage,
-      this.config.sourceLanguage,
-      this.config.customInstructions,
-      "continue_translation" // Custom step indicator
-    );
-
-    // Save current conversation state
-    const savedConversation = [...this.conversation];
-
-    // Use a fresh conversation for continuation to avoid token usage
-    this.conversation = [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: continuationPrompt,
-      },
-    ];
-
-    // Get the continuation from the model
-    this.startSpinnerWithTimer("Continuing incomplete translation");
-
     try {
-      const continuationResponse = await this.callAiService(continuationPrompt);
-
-      // Combine the partial translation with the continuation
-      const combinedTranslation = combineTranslation(
-        translationText,
-        continuationResponse,
-        targetLastLine
-      );
-
-      // Restore original conversation
-      this.conversation = savedConversation;
-
-      // Check if we successfully combined the translations
-      if (!combinedTranslation) {
-        this.logger.error(
-          "❌ Failed to combine partial translation with continuation"
-        );
-        // Reset counters on failure
-        this.continuationAttempts = 0;
-        this.previousTranslationLength = 0;
-        this.previousSourceLine = "";
-        return translationText; // Return original on failure
-      }
-
-      // Always save the combined translation immediately after each successful continuation
-      saveText(translationPath, combinedTranslation);
-      this.logger.success(
-        `✅ Saved continued translation (${combinedTranslation.length} characters)`
-      );
-
-      // Check if the combined translation is complete
-      const secondCheck = await checkTranslationCompletion(
+      // First check if the translation is complete (unless we're forcing continuation)
+      const completionCheck = await checkTranslationCompletion(
         sourceText,
-        combinedTranslation,
+        translationText,
         this.config.verbose
       );
 
-      if (secondCheck && secondCheck.continue) {
-        // Still incomplete - recursive call to continue further
-        this.logger.warn(
-          `⚠️ Translation still incomplete after continuation. Attempting another continuation.`
-        );
-
-        // Do NOT pass forceCheck in recursive calls - let the completion check determine if we need more
-        return this.handleTranslationContinuation(
-          sourceText,
-          combinedTranslation, // Pass the updated combined translation for the next continuation
-          translationPath,
-          tag,
-          false // Don't force on recursive calls
-        );
+      if (!forceCheck && (!completionCheck || !completionCheck.continue)) {
+        // Translation is complete or check failed - return original
+        // Reset continuation tracking
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+        return translationText;
       }
 
-      this.succeedSpinner(
-        "✅ Successfully continued and completed translation"
+      // Check if we're making minimal progress
+      if (translationText.length === this.previousTranslationLength) {
+        this.continuationAttempts++;
+        // If we've tried 3 times with no change, break the loop
+        if (this.continuationAttempts >= 3) {
+          this.logger.warn(
+            `⚠️ Breaking continuation loop after ${this.continuationAttempts} attempts with no progress`
+          );
+          this.continuationAttempts = 0;
+          this.previousTranslationLength = 0;
+          this.previousSourceLine = "";
+          return translationText;
+        }
+      } else if (
+        translationText.length - this.previousTranslationLength <
+          this.minimumMeaningfulProgress &&
+        this.previousTranslationLength > 0
+      ) {
+        // We're making very little progress (less than minimumMeaningfulProgress chars)
+        this.continuationAttempts++;
+        if (this.continuationAttempts >= 2) {
+          this.logger.warn(
+            `⚠️ Breaking continuation loop after ${
+              this.continuationAttempts
+            } attempts with minimal progress (only ${
+              translationText.length - this.previousTranslationLength
+            } chars added)`
+          );
+          this.continuationAttempts = 0;
+          this.previousTranslationLength = 0;
+          this.previousSourceLine = "";
+          return translationText;
+        }
+      } else {
+        // Reset counter when making good progress
+        this.continuationAttempts = 0;
+      }
+
+      // Store current length for next comparison
+      this.previousTranslationLength = translationText.length;
+
+      // Determine if we need continuation
+      const needsContinuation =
+        forceCheck || (completionCheck && completionCheck.continue);
+      if (!needsContinuation) {
+        return translationText;
+      }
+
+      // For forced check with no completion data, use last paragraph as continuation point
+      let targetLastLine = "";
+      let sourceLine = "";
+
+      if (
+        forceCheck &&
+        (!completionCheck ||
+          !completionCheck.targetLastLine ||
+          !completionCheck.sourceLine)
+      ) {
+        // Find the last paragraph of the translated text
+        const paragraphs = translationText.split(/\n\n+/);
+        if (paragraphs.length > 0) {
+          targetLastLine = paragraphs[paragraphs.length - 1].trim();
+          this.logger.info(
+            `📝 Using last paragraph as continuation point for forced continuation`
+          );
+        } else {
+          targetLastLine = translationText.split("\n").pop() || "";
+          this.logger.info(
+            `📝 Using last line as continuation point for forced continuation`
+          );
+        }
+
+        // Use approximate source position - midpoint if we can't determine
+        const sourceLines = sourceText.split("\n");
+        const midpoint = Math.floor(sourceLines.length / 2);
+        sourceLine = sourceLines[midpoint] || "";
+      } else {
+        // Use the identified continuation points
+        targetLastLine = completionCheck?.targetLastLine || "";
+        sourceLine = completionCheck?.sourceLine || "";
+      }
+
+      // Check if we're trying to continue from the same source line as before
+      if (sourceLine && sourceLine === this.previousSourceLine) {
+        this.continuationAttempts++;
+
+        // If we've tried to continue from the same source line twice, assume we're at the end
+        if (this.continuationAttempts >= 2) {
+          this.logger.warn(
+            `⚠️ Breaking continuation loop: detected same source line "${sourceLine.substring(
+              0,
+              30
+            )}..." in consecutive attempts`
+          );
+          this.logger.info(
+            `📝 This likely means we've reached the end of the document or the model can't make further progress`
+          );
+
+          // Reset tracking variables
+          this.continuationAttempts = 0;
+          this.previousTranslationLength = 0;
+          this.previousSourceLine = "";
+
+          return translationText;
+        }
+      } else {
+        // Different source line, reset attempt counter for this check
+        this.continuationAttempts = 0;
+      }
+
+      // Store current source line for next comparison
+      this.previousSourceLine = sourceLine;
+
+      // We need to continue translation - log information
+      this.logger.warn(
+        `⚠️ Translation appears to be incomplete${
+          forceCheck ? " (forced check due to truncation)" : ""
+        }. Attempting to continue from identified point.`
       );
-      // Reset counters on successful completion
-      this.continuationAttempts = 0;
-      this.previousTranslationLength = 0;
-      this.previousSourceLine = "";
-      return combinedTranslation;
+
+      // Create backup of partial translation
+      const backupPath = backupPartialTranslation(translationPath);
+      if (backupPath) {
+        this.logger.info(`📋 Backed up partial translation to: ${backupPath}`);
+      }
+
+      // NEW APPROACH: Use a simple continuation prompt that preserves conversation context
+      // instead of creating a completely new contextual prompt that might lose nuances
+
+      const simpleContinuationPrompt =
+        createSimpleContinuationPrompt(targetLastLine);
+
+      this.startSpinnerWithTimer("Continuing incomplete translation");
+
+      try {
+        // Instead of creating a new conversation, just add the continuation request to the existing one
+        // This preserves all the context from previous steps
+        this.conversation.push({
+          role: "user",
+          content: simpleContinuationPrompt,
+        });
+
+        // Save current conversation state before continuation
+        this.saveConversationHistory("Before continuation attempt");
+
+        // Call the AI service with the existing conversation that now has the continuation request
+        const continuationResponse = await this.aiService.generateResponse(
+          this.conversation,
+          {
+            modelName: this.config.modelName,
+            temperature: 0.7,
+            maxOutputTokens: this.config.maxOutputTokens,
+            reasoningEffort: this.config.reasoningEffort,
+          }
+        );
+
+        // Add the model's response to the conversation
+        this.conversation.push({
+          role: "assistant",
+          content: continuationResponse.content,
+        });
+
+        // Save updated conversation history
+        this.saveConversationHistory("After continuation attempt");
+
+        // Combine the partial translation with the continuation
+        const combinedTranslation = combineTranslation(
+          translationText,
+          continuationResponse.content,
+          targetLastLine
+        );
+
+        // Check if we successfully combined the translations
+        if (!combinedTranslation) {
+          this.logger.error(
+            "❌ Failed to combine partial translation with continuation"
+          );
+          // Reset counters on failure
+          this.continuationAttempts = 0;
+          this.previousTranslationLength = 0;
+          this.previousSourceLine = "";
+          return translationText; // Return original on failure
+        }
+
+        // Always save the combined translation immediately after each successful continuation
+        saveText(translationPath, combinedTranslation);
+        this.logger.success(
+          `✅ Saved continued translation (${combinedTranslation.length} characters)`
+        );
+
+        // Check if the combined translation is complete
+        const secondCheck = await checkTranslationCompletion(
+          sourceText,
+          combinedTranslation,
+          this.config.verbose
+        );
+
+        if (secondCheck && secondCheck.continue) {
+          // Still incomplete - recursive call to continue further
+          this.logger.warn(
+            `⚠️ Translation still incomplete after continuation. Attempting another continuation.`
+          );
+
+          // Do NOT pass forceCheck in recursive calls - let the completion check determine if we need more
+          return this.handleTranslationContinuation(
+            sourceText,
+            combinedTranslation, // Pass the updated combined translation for the next continuation
+            translationPath,
+            tag,
+            false // Don't force on recursive calls
+          );
+        }
+
+        this.succeedSpinner(
+          "✅ Successfully continued and completed translation"
+        );
+        // Reset counters on successful completion
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+        return combinedTranslation;
+      } catch (error) {
+        this.logger.error(`❌ Error during translation continuation: ${error}`);
+        this.failSpinner("❌ Failed to continue translation");
+
+        // Reset counters on error
+        this.continuationAttempts = 0;
+        this.previousTranslationLength = 0;
+        this.previousSourceLine = "";
+
+        return translationText; // Return original on failure
+      }
     } catch (error) {
-      this.logger.error(`❌ Error during translation continuation: ${error}`);
-      this.failSpinner("❌ Failed to continue translation");
-
-      // Restore original conversation
-      this.conversation = savedConversation;
-
-      // Reset counters on error
-      this.continuationAttempts = 0;
-      this.previousTranslationLength = 0;
-      this.previousSourceLine = "";
-
-      return translationText; // Return original on failure
+      this.logger.error(`❌ Error in continuation handling: ${error}`);
+      return translationText; // Return original on any error
     }
   }
 
